@@ -1,0 +1,10 @@
+# Python 3.9+ (developed and tested on 3.14).
+# Install with: pip install -r requirements.txt
+# Run tests with: python -m unittest discover
+
+# Required by the simulator itself. Tested with 2.5.3.
+numpy>=2.0
+
+# Needed only for tests/test_qiskit_parity.py, which is skipped without it.
+# Tested with 2.5.2.
+qiskit>=2.0
