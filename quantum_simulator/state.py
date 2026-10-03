@@ -33,6 +33,16 @@ column index. So CX applied to ``[control, target]`` is::
      [0, 0, 0, 1],
      [0, 0, 1, 0],
      [0, 1, 0, 0]]
+
+Precision
+---------
+States are complex128 by default; every constructor takes
+``dtype=np.complex64``. Single precision halves memory (``2^n * 8`` bytes
+instead of ``2^n * 16``), which buys exactly one extra qubit at fixed
+memory, at the cost of ~7 significant digits instead of ~16. Operations
+preserve the state's precision: gates are stored in complex128 and rounded
+to the state's dtype when applied. See ``experiments/precision.py`` for the
+measured energy error.
 """
 
 from __future__ import annotations
@@ -45,6 +55,28 @@ import numpy as np
 from . import linalg
 
 DTYPE = np.complex128
+"""Default precision. Every constructor also takes ``dtype=np.complex64``."""
+
+# Norm tolerance per precision: complex64 carries ~7 significant digits, complex128 ~16.
+_DEFAULT_ATOL = {np.dtype(np.complex64): 1e-5, np.dtype(np.complex128): 1e-10}
+
+
+def resolve_dtype(dtype: np.typing.DTypeLike | None) -> np.dtype:
+    """Validate a precision; ``None`` means the default, :data:`DTYPE`."""
+    dt = np.dtype(DTYPE if dtype is None else dtype)
+    if dt not in _DEFAULT_ATOL:
+        raise ValueError(f"unsupported dtype {dt}; use complex64 or complex128")
+    return dt
+
+
+def default_atol(dtype: np.typing.DTypeLike | None) -> float:
+    """Norm-check tolerance appropriate to ``dtype``."""
+    return _DEFAULT_ATOL[resolve_dtype(dtype)]
+
+
+def _infer_dtype(arr: np.ndarray) -> np.dtype:
+    # Single-precision input stays single precision; everything else gets complex128.
+    return np.dtype(np.complex64) if arr.dtype in (np.float32, np.complex64) else np.dtype(np.complex128)
 
 
 def qubit_axis(qubit: int, n: int) -> int:
@@ -61,12 +93,12 @@ def num_qubits(psi: np.ndarray) -> int:
     return psi.ndim
 
 
-def zero_state(n: int) -> np.ndarray:
+def zero_state(n: int, dtype: np.typing.DTypeLike | None = None) -> np.ndarray:
     """The state ``|0...0>`` on ``n`` qubits."""
-    return basis_state(0, n)
+    return basis_state(0, n, dtype)
 
 
-def basis_state(index: int, n: int) -> np.ndarray:
+def basis_state(index: int, n: int, dtype: np.typing.DTypeLike | None = None) -> np.ndarray:
     """Computational basis state with flat index ``index`` (Qiskit ordering).
 
     Bit ``t`` of ``index`` is the value of qubit ``t``, so
@@ -76,18 +108,27 @@ def basis_state(index: int, n: int) -> np.ndarray:
         raise ValueError(f"n must be non-negative, got {n}")
     if not 0 <= index < 2**n:
         raise ValueError(f"index {index} out of range for {n} qubits")
-    vec = np.zeros(2**n, dtype=DTYPE)
+    vec = np.zeros(2**n, dtype=resolve_dtype(dtype))
     vec[index] = 1.0
     return vec.reshape((2,) * n)
 
 
-def from_vector(vec: np.ndarray, *, check_norm: bool = True, atol: float = 1e-10) -> np.ndarray:
+def from_vector(
+    vec: np.ndarray,
+    *,
+    dtype: np.typing.DTypeLike | None = None,
+    check_norm: bool = True,
+    atol: float | None = None,
+) -> np.ndarray:
     """Reshape a flat length-``2**n`` amplitude vector into a state tensor.
 
     ``vec`` is interpreted in Qiskit's little-endian ordering, so the result
     can be compared directly with ``qiskit.quantum_info.Statevector.data``.
+    With ``dtype=None``, single-precision input stays complex64 and anything
+    else becomes complex128.
     """
-    vec = np.asarray(vec, dtype=DTYPE)
+    vec = np.asarray(vec)
+    vec = vec.astype(_infer_dtype(vec) if dtype is None else resolve_dtype(dtype), copy=False)
     if vec.ndim != 1:
         raise ValueError(f"expected a 1-D vector, got shape {vec.shape}")
     size = vec.size
@@ -109,8 +150,14 @@ def to_vector(psi: np.ndarray) -> np.ndarray:
     return psi.reshape(-1)
 
 
-def is_normalized(psi: np.ndarray, atol: float = 1e-10) -> bool:
-    """Whether ``psi`` (tensor or flat) has unit 2-norm."""
+def is_normalized(psi: np.ndarray, atol: float | None = None) -> bool:
+    """Whether ``psi`` (tensor or flat) has unit 2-norm.
+
+    ``atol=None`` picks a tolerance from ``psi``'s precision (:func:`default_atol`).
+    """
+    psi = np.asarray(psi)
+    if atol is None:
+        atol = _DEFAULT_ATOL.get(psi.dtype, _DEFAULT_ATOL[np.dtype(DTYPE)])
     return bool(abs(np.vdot(psi, psi).real - 1.0) <= atol)
 
 
@@ -122,10 +169,13 @@ def apply_gate(psi: np.ndarray, gate: np.ndarray, qubits: Sequence[int]) -> np.n
     place with ``moveaxis``. Cost is O(2^n * 2^k); the full 2^n x 2^n
     operator is never formed. ``qubits[0]`` is the gate's least significant
     bit (see the module docstring).
+
+    The gate is cast to the state's precision first, so a complex64 state
+    stays complex64 instead of being silently promoted by a complex128 gate.
     """
     n = num_qubits(psi)
     k = len(qubits)
-    gate = np.asarray(gate)
+    gate = np.asarray(gate, dtype=np.result_type(psi.dtype, np.complex64))
     if gate.shape != (2**k, 2**k):
         raise ValueError(f"gate shape {gate.shape} does not act on {k} qubit(s)")
     if len(set(qubits)) != k:
@@ -160,18 +210,31 @@ _LABEL_STATES = {
 class State:
     """A pure n-qubit state.
 
-    ``psi`` is the ``(2,)*n`` complex128 amplitude tensor, laid out as in the
-    module docstring. Gate application mutates ``psi`` in place (and returns
+    ``psi`` is the ``(2,)*n`` amplitude tensor, laid out as in the module
+    docstring, in complex128 (default) or complex64. Precision is fixed at
+    construction and preserved by every operation; change it explicitly with
+    :meth:`astype`. Gate application mutates ``psi`` in place (and returns
     ``self`` so calls chain); use :meth:`copy` to branch.
     """
 
     __slots__ = ("psi",)
 
-    def __init__(self, psi: np.ndarray, *, check_norm: bool = True, atol: float = 1e-10):
-        psi = np.asarray(psi, dtype=DTYPE)
+    def __init__(
+        self,
+        psi: np.ndarray,
+        *,
+        dtype: np.typing.DTypeLike | None = None,
+        check_norm: bool = True,
+        atol: float | None = None,
+    ):
+        psi = np.asarray(psi)
+        dt = _infer_dtype(psi) if dtype is None else resolve_dtype(dtype)
+        if atol is None:
+            atol = default_atol(dt)
         if psi.ndim == 1:
-            psi = from_vector(psi, check_norm=check_norm, atol=atol)
+            psi = from_vector(psi, dtype=dt, check_norm=check_norm, atol=atol)
         else:
+            psi = psi.astype(dt, copy=False)
             num_qubits(psi)
             if check_norm and not is_normalized(psi, atol=atol):
                 raise ValueError(f"state has norm {np.linalg.norm(psi)}, expected 1")
@@ -181,17 +244,17 @@ class State:
     # -- construction -------------------------------------------------------
 
     @classmethod
-    def zero(cls, n: int) -> State:
+    def zero(cls, n: int, dtype: np.typing.DTypeLike | None = None) -> State:
         """``|0...0>``."""
-        return cls(zero_state(n))
+        return cls(zero_state(n, dtype))
 
     @classmethod
-    def basis(cls, index: int, n: int) -> State:
+    def basis(cls, index: int, n: int, dtype: np.typing.DTypeLike | None = None) -> State:
         """Basis state with little-endian flat ``index``."""
-        return cls(basis_state(index, n))
+        return cls(basis_state(index, n, dtype))
 
     @classmethod
-    def from_label(cls, label: str) -> State:
+    def from_label(cls, label: str, dtype: np.typing.DTypeLike | None = None) -> State:
         """Product state from a Qiskit-style label over ``0 1 + - r l``.
 
         ``label[0]`` is the highest qubit, so ``"01"`` has qubit 0 in ``|1>``.
@@ -203,7 +266,8 @@ class State:
         if not factors:
             raise ValueError("label must be non-empty")
         # multiply.outer stacks axes left to right: label[0] lands on axis 0 = qubit n-1.
-        return cls(reduce(np.multiply.outer, factors))
+        # Built in complex128 and rounded once, so complex64 labels are correctly rounded.
+        return cls(reduce(np.multiply.outer, factors), dtype=resolve_dtype(dtype))
 
     # -- properties ---------------------------------------------------------
 
@@ -211,6 +275,16 @@ class State:
     def n(self) -> int:
         """Number of qubits."""
         return self.psi.ndim
+
+    @property
+    def dtype(self) -> np.dtype:
+        """Amplitude precision, complex64 or complex128."""
+        return self.psi.dtype
+
+    @property
+    def nbytes(self) -> int:
+        """Memory held by the amplitudes: ``2^n * 8`` (complex64) or ``2^n * 16`` bytes."""
+        return self.psi.nbytes
 
     @property
     def vector(self) -> np.ndarray:
@@ -257,8 +331,14 @@ class State:
         return self
 
     def tensor(self, other: State) -> State:
-        """``self ⊗ other``; ``other`` occupies the low qubits (Qiskit's ``tensor``)."""
-        return State(np.multiply.outer(self.psi, as_tensor(other)))
+        """``self ⊗ other``; ``other`` occupies the low qubits (Qiskit's ``tensor``).
+
+        Mixed precisions promote to complex128, but the norm is checked at the
+        looser tolerance: the complex64 factor's rounding error is still there.
+        """
+        other = as_tensor(other)
+        atol = max(default_atol(self.dtype), default_atol(other.dtype))
+        return State(np.multiply.outer(self.psi, other), atol=atol)
 
     # -- measurement --------------------------------------------------------
 
@@ -268,7 +348,7 @@ class State:
         Keys are bitstrings with qubit 0 rightmost, as in Qiskit's counts.
         """
         rng = np.random.default_rng(rng)
-        p = self.probabilities()
+        p = self.probabilities().astype(np.float64)  # multinomial needs sum(p) <= 1 in float64
         counts = rng.multinomial(shots, p / p.sum())
         return {format(k, f"0{self.n}b"): int(c) for k, c in enumerate(counts) if c}
 
@@ -277,5 +357,12 @@ class State:
     def copy(self) -> State:
         return State(self.psi.copy(), check_norm=False)
 
+    def astype(self, dtype: np.typing.DTypeLike) -> State:
+        """A copy of this state in another precision."""
+        return State(self.psi.astype(resolve_dtype(dtype)), check_norm=False)
+
     def __repr__(self) -> str:
-        return f"State(n={self.n}, vector={np.array2string(self.vector, precision=4)})"
+        return (
+            f"State(n={self.n}, dtype={self.dtype.name}, "
+            f"vector={np.array2string(self.vector, precision=4)})"
+        )

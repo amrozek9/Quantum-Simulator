@@ -19,11 +19,11 @@ import numpy as np
 
 from . import gates
 from .linalg import ATOL, kron
-from .state import DTYPE, State, apply_gate, as_tensor, num_qubits
+from .state import State, apply_gate, as_tensor, num_qubits, resolve_dtype
 
 PAULIS = {"I": gates.I, "X": gates.X, "Y": gates.Y, "Z": gates.Z}
 
-# Dense matrices are 16 * 4^n bytes: 12 qubits is 268 MB.
+# Dense complex128 matrices are 16 * 4^n bytes: 12 qubits is 268 MB.
 DEFAULT_MAX_DENSE_QUBITS = 12
 
 
@@ -81,9 +81,9 @@ class PauliSum:
     # -- action on states ----------------------------------------------------
 
     def apply(self, state: State | np.ndarray) -> np.ndarray:
-        """``H|psi>`` as a ``(2,)*n`` tensor (not normalized)."""
+        """``H|psi>`` as a ``(2,)*n`` tensor (not normalized), in ``psi``'s precision."""
         psi = self._check(state)
-        out = np.zeros_like(psi, dtype=DTYPE)
+        out = np.zeros_like(psi)
         for label, coeff in self.terms:
             out += coeff * _apply_pauli_string(psi, label)
         return out
@@ -105,32 +105,52 @@ class PauliSum:
 
     # -- dense / exact ---------------------------------------------------------
 
-    def to_matrix(self, max_qubits: int = DEFAULT_MAX_DENSE_QUBITS) -> np.ndarray:
-        """Dense ``2^n x 2^n`` matrix, little-endian (matches ``SparsePauliOp.to_matrix``)."""
+    def to_matrix(
+        self,
+        max_qubits: int = DEFAULT_MAX_DENSE_QUBITS,
+        dtype: np.typing.DTypeLike | None = None,
+    ) -> np.ndarray:
+        """Dense ``2^n x 2^n`` matrix, little-endian (matches ``SparsePauliOp.to_matrix``).
+
+        Accumulated in complex128 and rounded once to ``dtype``.
+        """
+        dt = resolve_dtype(dtype)
         if self.n > max_qubits:
             raise ValueError(
-                f"{self.n}-qubit dense matrix needs {16 * 4**self.n / 1e9:.1f} GB; "
+                f"{self.n}-qubit dense matrix needs {dt.itemsize * 4**self.n / 1e9:.1f} GB; "
                 f"raise max_qubits to force it"
             )
-        mat = np.zeros((2**self.n, 2**self.n), dtype=DTYPE)
+        mat = np.zeros((2**self.n, 2**self.n), dtype=np.complex128)
         for label, coeff in self.terms:
             mat += coeff * kron(*(PAULIS[c] for c in label))
-        return mat
+        return mat.astype(dt, copy=False)
 
-    def eigh(self, max_qubits: int = DEFAULT_MAX_DENSE_QUBITS) -> tuple[np.ndarray, np.ndarray]:
-        """All eigenvalues (ascending) and eigenvectors (columns, flat little-endian)."""
+    def eigh(
+        self,
+        max_qubits: int = DEFAULT_MAX_DENSE_QUBITS,
+        dtype: np.typing.DTypeLike | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """All eigenvalues (ascending) and eigenvectors (columns, flat little-endian).
+
+        ``dtype=np.complex64`` diagonalizes in single precision (LAPACK ``cheevd``).
+        """
         if not self.is_hermitian():
             raise ValueError("eigh requires a Hermitian observable")
-        return np.linalg.eigh(self.to_matrix(max_qubits))
+        return np.linalg.eigh(self.to_matrix(max_qubits, dtype))
 
-    def ground_state(self, max_qubits: int = DEFAULT_MAX_DENSE_QUBITS) -> tuple[float, State]:
+    def ground_state(
+        self,
+        max_qubits: int = DEFAULT_MAX_DENSE_QUBITS,
+        dtype: np.typing.DTypeLike | None = None,
+    ) -> tuple[float, State]:
         """Lowest eigenvalue and one eigenvector for it, by exact diagonalization.
 
         If the ground level is degenerate the returned vector is an arbitrary
-        member of that eigenspace; check ``eigh()[0]`` for the gap.
+        member of that eigenspace; check ``eigh()[0]`` for the gap. The state
+        is returned in ``dtype``.
         """
-        energies, vecs = self.eigh(max_qubits)
-        return float(energies[0]), State(vecs[:, 0])
+        energies, vecs = self.eigh(max_qubits, dtype)
+        return float(energies[0]), State(vecs[:, 0], dtype=resolve_dtype(dtype))
 
     # -- helpers ------------------------------------------------------------
 

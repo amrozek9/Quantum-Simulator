@@ -8,3 +8,7 @@ numpy>=2.0
 # Needed only for tests/test_qiskit_parity.py, which is skipped without it.
 # Tested with 2.5.2.
 qiskit>=2.0
+
+# Needed only to draw the figures in experiments/ (py -m experiments.precision).
+# Tested with 3.11.2.
+matplotlib>=3.8

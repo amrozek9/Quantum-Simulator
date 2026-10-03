@@ -10,23 +10,28 @@ from .linalg import (
 )
 from .observables import PauliSum, pauli
 from .state import (
+    DTYPE,
     State,
     apply_gate,
     basis_state,
+    default_atol,
     from_vector,
     is_normalized,
     num_qubits,
     qubit_axis,
+    resolve_dtype,
     to_vector,
     zero_state,
 )
 
 __all__ = [
+    "DTYPE",
     "PauliSum",
     "State",
     "apply_gate",
     "basis_state",
     "dagger",
+    "default_atol",
     "entanglement",
     "equal_up_to_global_phase",
     "fidelity",
@@ -42,6 +47,7 @@ __all__ = [
     "observables",
     "pauli",
     "qubit_axis",
+    "resolve_dtype",
     "to_vector",
     "zero_state",
 ]
