@@ -23,7 +23,7 @@ State.zero(20, dtype=np.complex64).nbytes / 2**20   # 8.0 MiB instead of 16.0
 
 ```sh
 pip install -r requirements.txt     # numpy; qiskit and matplotlib are optional
-python -m unittest discover         # 91 tests; the 17 Qiskit tests skip without qiskit
+python -m unittest discover         # 124 tests; the 17 Qiskit tests skip without qiskit
 ```
 
 ## Conventions
@@ -75,10 +75,19 @@ with it:
 | `test_state.py` | 26 | [`tests/reference.py`](tests/reference.py): naive loops over bit patterns that build full matrices, for gates on adjacent, non-adjacent and reversed qubits |
 | `test_linalg.py` | 6 | Definitions: conjugation of the first argument, unitarity, Hermiticity, Kronecker order |
 | `test_gates.py` | 11 | Algebraic identities (RX(π) = −iX, SX² = X, HZH = X, …), fusion order, controlled gates |
+| `test_standard_gates.py` | 33 | What X, Y, Z, H, S, T, RX, RY, RZ, CNOT and CZ *do*: action on basis states and eigenstates, Pauli algebra, phase-gate powers, rotation laws and Bloch-sphere geometry, CNOT/CZ truth tables, Bell states, phase kickback; state tests run in both precisions |
 | `test_observables.py` | 12 | Known physics: Heisenberg singlet at −3, two-site Ising ground energy −√(1+4g²), zero variance in eigenstates |
 | `test_entanglement.py` | 7 | Bell and GHZ entropies, product states, a brute-force partial trace |
 | `test_precision.py` | 12 | complex64 stays complex64 through every operation and agrees with complex128 to single precision |
 | `test_qiskit_parity.py` | 17 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, 20 random circuits, probabilities, labels, `SparsePauliOp`, `partial_trace`, `entropy` |
+
+To confirm the gate tests can actually fail, nine bugs were planted in the
+gates one at a time. These included a wrong sign on Y, S swapped for S†,
+RX rotating the wrong way, the textbook CNOT ordering, and CZ putting its
+phase on the wrong state. Each one made between 5 and 13 tests in
+`test_standard_gates.py` fail. Making RZ equal to the phase gate changes it
+only by a global phase, which no measurement can see, so only the
+matrix-level tests catch that one.
 
 The tests have caught two real bugs so far:
 
@@ -176,7 +185,7 @@ quantum_simulator/
   entanglement.py   Schmidt decomposition, reduced density matrices, entropies
 tests/
   reference.py      naive loop-based implementations used as ground truth
-  test_*.py         91 tests (see above)
+  test_*.py         124 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   results/          raw numbers (precision.json)
@@ -193,6 +202,8 @@ Done so far:
    diagonalization, entanglement.
 3. Exact parity with Qiskit, checked by tests.
 4. Precision as a parameter, with a measured accuracy and speed cost.
+5. Behavior tests for the standard gates (X, Y, Z, H, S, T, RX, RY, RZ,
+   CNOT, CZ), with a planted-bug check that they catch real mistakes.
 
 Not covered yet:
 
