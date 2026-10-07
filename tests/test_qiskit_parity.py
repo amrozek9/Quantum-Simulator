@@ -220,5 +220,62 @@ class TestEntanglementMatchesQiskit(unittest.TestCase):
         self.assertAlmostEqual(entanglement_entropy(sv.data, [2]), entropy(partial_trace(sv, [0, 1, 3]), base=2))
 
 
+@unittest.skipIf(QuantumCircuit is None, "qiskit not installed")
+class TestCircuitsMatchQiskit(unittest.TestCase):
+    """Circuit objects exported with to_qiskit run to the same state, and have the same depth."""
+
+    def test_random_circuits(self):
+        from quantum_simulator.circuit import fuse_single_qubit_gates, run
+        from quantum_simulator.interop import to_qiskit
+        from tests.test_circuit import random_circuit
+
+        rng = np.random.default_rng(20)
+        for trial in range(25):
+            c = random_circuit(int(rng.integers(1, 7)), 40, rng)
+            params = rng.uniform(-np.pi, np.pi, c.n_params)
+            ours = run(c, params).state.vector
+            with self.subTest(trial=trial, n=c.n):
+                np.testing.assert_allclose(ours, Statevector(to_qiskit(c, params)).data, atol=1e-10)
+                fused = fuse_single_qubit_gates(c)
+                np.testing.assert_allclose(run(fused, params).state.vector, ours, atol=1e-10)
+                np.testing.assert_allclose(Statevector(to_qiskit(fused, params)).data, ours, atol=1e-10)
+
+    def test_symbolic_parameters(self):
+        from quantum_simulator.circuit import Circuit, run
+        from quantum_simulator.interop import to_qiskit
+
+        c = Circuit(2).ry(0).rzz(0, 1).rx(1).ry(1, param=0).rz(0, 0.4)
+        qc = to_qiskit(c)
+        self.assertEqual(qc.num_parameters, c.n_params)
+        params = [0.3, -1.1, 2.0]
+        theta = sorted(qc.parameters, key=lambda p: p.index)
+        bound = qc.assign_parameters(dict(zip(theta, params)))
+        np.testing.assert_allclose(Statevector(bound).data, run(c, params).state.vector, atol=1e-12)
+
+    def test_depth_matches_qiskit(self):
+        from quantum_simulator.interop import to_qiskit
+        from tests.test_circuit import random_circuit
+
+        rng = np.random.default_rng(21)
+        for trial in range(25):
+            c = random_circuit(int(rng.integers(1, 7)), int(rng.integers(0, 40)), rng, fixed_fraction=1.0)
+            if trial % 2:  # half of them also measure every qubit
+                c.n_clbits = c.n
+                for q in range(c.n):
+                    c.measure(q, q)
+            with self.subTest(trial=trial):
+                self.assertEqual(c.depth(), to_qiskit(c).depth())
+
+    def test_conditions_export_as_if_test(self):
+        from quantum_simulator.circuit import Circuit
+        from quantum_simulator.interop import to_qiskit
+
+        c = Circuit(3, 2).h(1).cx(1, 2).cx(0, 1).h(0).measure(0, 0).measure(1, 1)
+        c.x(2).c_if(1).z(2).c_if(0)
+        ops = to_qiskit(c).count_ops()
+        self.assertEqual(ops.get("if_else"), 2)
+        self.assertEqual(ops.get("measure"), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

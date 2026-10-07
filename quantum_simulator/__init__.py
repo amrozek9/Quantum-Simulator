@@ -1,4 +1,5 @@
-from . import entanglement, gates, linalg, observables
+from . import circuit, entanglement, gates, interop, linalg, observables
+from .circuit import Circuit, Op, run
 from .linalg import (
     dagger,
     equal_up_to_global_phase,
@@ -25,11 +26,14 @@ from .state import (
 )
 
 __all__ = [
+    "Circuit",
     "DTYPE",
+    "Op",
     "PauliSum",
     "State",
     "apply_gate",
     "basis_state",
+    "circuit",
     "dagger",
     "default_atol",
     "entanglement",
@@ -38,6 +42,7 @@ __all__ = [
     "from_vector",
     "gates",
     "inner",
+    "interop",
     "is_hermitian",
     "is_normalized",
     "is_unitary",
@@ -48,6 +53,7 @@ __all__ = [
     "pauli",
     "qubit_axis",
     "resolve_dtype",
+    "run",
     "to_vector",
     "zero_state",
 ]

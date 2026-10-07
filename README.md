@@ -17,13 +17,17 @@ h = PauliSum([("XX", 1), ("YY", 1), ("ZZ", 1)])
 energy, ground = h.ground_state()                # -3.0, the singlet
 
 State.zero(20, dtype=np.complex64).nbytes / 2**20   # 8.0 MiB instead of 16.0
+
+from quantum_simulator import Circuit, run
+ansatz = Circuit(2).ry(0).ry(1).cx(0, 1)          # 2 parameters, stored as indices
+run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter array
 ```
 
 ## Setup
 
 ```sh
 pip install -r requirements.txt     # numpy; qiskit and matplotlib are optional
-python -m unittest discover         # 151 tests; the 17 Qiskit tests skip without qiskit
+python -m unittest discover         # 187 tests; the 21 Qiskit tests skip without qiskit
 ```
 
 ## Conventions
@@ -52,6 +56,8 @@ python -m unittest discover         # 151 tests; the 17 Qiskit tests skip withou
 | `gates` | standard gates and rotations, `controlled()`, `fuse()` |
 | `observables` | `PauliSum`: expectation and variance without building the matrix, exact diagonalization |
 | `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy |
+| `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions), `run`, DAG, depth, layers, single-qubit gate fusion |
+| `interop` | `to_qiskit`: export a `Circuit`, with bound or symbolic parameters |
 
 ## The linear algebra, and where it lives
 
@@ -86,7 +92,8 @@ with it:
 | `test_observables.py` | 12 | Known physics: Heisenberg singlet at −3, two-site Ising ground energy −√(1+4g²), zero variance in eigenstates |
 | `test_entanglement.py` | 7 | Bell and GHZ entropies, product states, a brute-force partial trace |
 | `test_precision.py` | 12 | complex64 stays complex64 through every operation and agrees with complex128 to single precision |
-| `test_qiskit_parity.py` | 17 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, 20 random circuits, probabilities, labels, `SparsePauliOp`, `partial_trace`, `entropy` |
+| `test_circuit.py` | 32 | Building and validation; `run` against applying gates by hand; parameter reuse; classical control; teleportation on all four branches; depth and layers worked out by hand; fusion keeps the state and measurement results, merges in the right order, and never crosses a measurement, condition or two-qubit gate |
+| `test_qiskit_parity.py` | 21 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `SparsePauliOp`, `partial_trace`, `entropy` |
 
 To confirm the gate tests can actually fail, nine bugs were planted in the
 gates one at a time. These included a wrong sign on Y, S swapped for S†,
@@ -190,9 +197,11 @@ quantum_simulator/
   gates.py          gate matrices, controlled(), fuse()
   observables.py    PauliSum, exact diagonalization
   entanglement.py   Schmidt decomposition, reduced density matrices, entropies
+  circuit.py        Op, Circuit, run, DAG, fusion
+  interop.py        to_qiskit
 tests/
   reference.py      naive loop-based implementations used as ground truth
-  test_*.py         151 tests (see above)
+  test_*.py         187 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   results/          raw numbers (precision.json)
@@ -213,15 +222,19 @@ Done so far:
    CNOT, CZ), with a planted-bug check that they catch real mistakes.
 6. Measurement: `prob_one`, `measure` (collapse and renormalize), `sample`
    (one outcome per shot) and `sample_counts`, all with an explicit seed.
+7. Circuits as data: `Op` and `Circuit` with parameters stored as indices,
+   classical bits and conditioned gates, an executor, a dependency graph
+   with depth and layers, single-qubit gate fusion, and `to_qiskit`.
 
 Not covered yet:
 
 - **Pure states only.** There are no density-matrix states or noise
   channels. Reduced density matrices exist only as an output of
   `entanglement`.
-- **No circuit type yet.** `State.measure` collapses a qubit, but nothing
-  records measurement results in classical registers or conditions later
-  gates on them, which teleportation and error correction need.
+- **Fusion is single-qubit only.** It merges runs of one-qubit gates but
+  doesn't absorb them into a neighbouring two-qubit gate. The scheduler
+  treats ops as commuting only when they touch disjoint wires, so it misses
+  cases like two diagonal gates on the same qubit.
 - **Exact diagonalization is dense**, so it's capped at 12 qubits by default
   (`max_qubits` raises the cap). A sparse or Lanczos solver would go further.
 - **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2 and
