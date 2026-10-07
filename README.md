@@ -23,7 +23,7 @@ State.zero(20, dtype=np.complex64).nbytes / 2**20   # 8.0 MiB instead of 16.0
 
 ```sh
 pip install -r requirements.txt     # numpy; qiskit and matplotlib are optional
-python -m unittest discover         # 124 tests; the 17 Qiskit tests skip without qiskit
+python -m unittest discover         # 151 tests; the 17 Qiskit tests skip without qiskit
 ```
 
 ## Conventions
@@ -38,10 +38,16 @@ python -m unittest discover         # 124 tests; the 17 Qiskit tests skip withou
   (`complex128` by default, or `complex64`), and every operation preserves
   it. Gates are stored in complex128 and rounded to the state's precision
   when they're applied.
+- **Randomness is always explicit.** `measure`, `sample` and `sample_counts`
+  require an `rng` (a `numpy.random.Generator` or an int seed). There is no
+  default, because an unseeded run can't be reproduced. Measurement treats an
+  outcome whose probability is below rounding level for the precision
+  (`ZERO_BRANCH_TOL`) as exactly zero, so floating-point noise is never
+  selected and blown up into a state.
 
 | Module | Contents |
 |---|---|
-| `state` | `State`, the index convention, `apply_gate`, precision handling |
+| `state` | `State`, the index convention, `apply_gate`, precision handling, measurement and sampling |
 | `linalg` | inner product, fidelity, unitary/Hermitian checks, `kron` |
 | `gates` | standard gates and rotations, `controlled()`, `fuse()` |
 | `observables` | `PauliSum`: expectation and variance without building the matrix, exact diagonalization |
@@ -76,6 +82,7 @@ with it:
 | `test_linalg.py` | 6 | Definitions: conjugation of the first argument, unitarity, Hermiticity, Kronecker order |
 | `test_gates.py` | 11 | Algebraic identities (RX(π) = −iX, SX² = X, HZH = X, …), fusion order, controlled gates |
 | `test_standard_gates.py` | 33 | What X, Y, Z, H, S, T, RX, RY, RZ, CNOT and CZ *do*: action on basis states and eigenstates, Pauli algebra, phase-gate powers, rotation laws and Bloch-sphere geometry, CNOT/CZ truth tables, Bell states, phase kickback; state tests run in both precisions |
+| `test_measurement.py` | 27 | Collapse against an independent projection over flat indices; Bell and GHZ correlations; Born-rule frequencies; repeated measurement; norm-drift handling; the rounding-noise cutoff in both precisions; required, reproducible `rng` |
 | `test_observables.py` | 12 | Known physics: Heisenberg singlet at −3, two-site Ising ground energy −√(1+4g²), zero variance in eigenstates |
 | `test_entanglement.py` | 7 | Bell and GHZ entropies, product states, a brute-force partial trace |
 | `test_precision.py` | 12 | complex64 stays complex64 through every operation and agrees with complex128 to single precision |
@@ -185,7 +192,7 @@ quantum_simulator/
   entanglement.py   Schmidt decomposition, reduced density matrices, entropies
 tests/
   reference.py      naive loop-based implementations used as ground truth
-  test_*.py         124 tests (see above)
+  test_*.py         151 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   results/          raw numbers (precision.json)
@@ -204,12 +211,17 @@ Done so far:
 4. Precision as a parameter, with a measured accuracy and speed cost.
 5. Behavior tests for the standard gates (X, Y, Z, H, S, T, RX, RY, RZ,
    CNOT, CZ), with a planted-bug check that they catch real mistakes.
+6. Measurement: `prob_one`, `measure` (collapse and renormalize), `sample`
+   (one outcome per shot) and `sample_counts`, all with an explicit seed.
 
 Not covered yet:
 
-- **Pure states only.** There are no density-matrix states, noise channels or
-  mid-circuit measurement. Reduced density matrices exist only as an output
-  of `entanglement`.
+- **Pure states only.** There are no density-matrix states or noise
+  channels. Reduced density matrices exist only as an output of
+  `entanglement`.
+- **No circuit type yet.** `State.measure` collapses a qubit, but nothing
+  records measurement results in classical registers or conditions later
+  gates on them, which teleportation and error correction need.
 - **Exact diagonalization is dense**, so it's capped at 12 qubits by default
   (`max_qubits` raises the cap). A sparse or Lanczos solver would go further.
 - **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2 and

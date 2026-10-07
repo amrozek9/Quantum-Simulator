@@ -47,6 +47,7 @@ measured energy error.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from functools import reduce
 
@@ -72,6 +73,24 @@ def resolve_dtype(dtype: np.typing.DTypeLike | None) -> np.dtype:
 def default_atol(dtype: np.typing.DTypeLike | None) -> float:
     """Norm-check tolerance appropriate to ``dtype``."""
     return _DEFAULT_ATOL[resolve_dtype(dtype)]
+
+
+ZERO_BRANCH_TOL = {
+    np.dtype(np.complex64): 10 * float(np.finfo(np.float32).eps),   # ~1.2e-6
+    np.dtype(np.complex128): 10 * float(np.finfo(np.float64).eps),  # ~2.2e-15
+}
+"""Measurement branches less likely than this are rounding noise and never selected."""
+
+
+def _as_rng(rng: np.random.Generator | int) -> np.random.Generator:
+    if isinstance(rng, np.random.Generator):
+        return rng
+    if isinstance(rng, (int, np.integer)) and not isinstance(rng, bool):
+        return np.random.default_rng(rng)
+    raise TypeError(
+        f"rng must be a numpy.random.Generator or an int seed, got {rng!r}; "
+        "there is no default because an unseeded run cannot be reproduced"
+    )
 
 
 def _infer_dtype(arr: np.ndarray) -> np.dtype:
@@ -341,16 +360,82 @@ class State:
         return State(np.multiply.outer(self.psi, other), atol=atol)
 
     # -- measurement --------------------------------------------------------
+    #
+    # Every random operation takes an explicit ``rng``: a np.random.Generator,
+    # or an int seed. There is deliberately no default, because an unseeded
+    # run cannot be reproduced.
 
-    def sample_counts(self, shots: int, rng: np.random.Generator | int | None = None) -> dict[str, int]:
-        """Sample ``shots`` computational-basis measurements.
+    def prob_one(self, qubit: int) -> float:
+        """Born-rule probability that measuring ``qubit`` gives 1."""
+        branch = np.take(self.psi, 1, axis=qubit_axis(qubit, self.n))
+        return float(np.sum(np.abs(branch) ** 2, dtype=np.float64))
 
-        Keys are bitstrings with qubit 0 rightmost, as in Qiskit's counts.
+    def measure(self, qubit: int, rng: np.random.Generator | int) -> int:
+        """Measure ``qubit`` in the computational basis and collapse the state.
+
+        The outcome is drawn from the Born rule, the branch that did not happen
+        is removed, and the state is renormalized. ``self.psi`` is replaced by a
+        new array (never written in place, since it may share memory with an
+        array the caller passed in). Returns the outcome, 0 or 1.
+
+        Probabilities are taken relative to the current norm, so the
+        post-measurement state has norm 1 whatever drift came before. A branch
+        whose relative probability is below :data:`ZERO_BRANCH_TOL` for this
+        precision is treated as exactly zero and never selected: its amplitudes
+        are rounding noise, and renormalizing them would blow noise up into a
+        state. This changes outcome frequencies by at most that tolerance.
+
+        An int ``rng`` seeds a fresh generator on every call, so in a loop pass
+        one Generator instead, or every call draws the same number.
         """
-        rng = np.random.default_rng(rng)
-        p = self.probabilities().astype(np.float64)  # multinomial needs sum(p) <= 1 in float64
-        counts = rng.multinomial(shots, p / p.sum())
+        rng = _as_rng(rng)
+        ax = qubit_axis(qubit, self.n)
+        p0 = float(np.sum(np.abs(np.take(self.psi, 0, axis=ax)) ** 2, dtype=np.float64))
+        p1 = float(np.sum(np.abs(np.take(self.psi, 1, axis=ax)) ** 2, dtype=np.float64))
+        if p0 + p1 == 0:
+            raise ValueError("cannot measure the zero vector")
+        p1_rel = p1 / (p0 + p1)
+        tol = ZERO_BRANCH_TOL[self.dtype]
+        if p1_rel < tol:
+            p1_rel = 0.0
+        elif p1_rel > 1 - tol:
+            p1_rel = 1.0
+        outcome = int(rng.random() < p1_rel)
+
+        idx = [slice(None)] * self.n
+        idx[ax] = outcome
+        psi = np.zeros(self.psi.shape, dtype=self.dtype)
+        # A Python float divisor keeps a complex64 branch complex64 (np.sqrt would make a
+        # complex128 temporary, which the assignment then rounds back).
+        psi[tuple(idx)] = np.take(self.psi, outcome, axis=ax) / math.sqrt(p1 if outcome else p0)
+        self.psi = psi
+        return outcome
+
+    def sample(self, shots: int, rng: np.random.Generator | int) -> np.ndarray:
+        """Draw ``shots`` measurements of all qubits without collapsing the state.
+
+        Returns one little-endian basis index per shot (int64), in draw order;
+        ``format(k, f"0{n}b")`` turns one into a Qiskit-style bitstring.
+        """
+        return _as_rng(rng).choice(2**self.n, size=shots, p=self._sampling_distribution())
+
+    def sample_counts(self, shots: int, rng: np.random.Generator | int) -> dict[str, int]:
+        """Like :meth:`sample`, but aggregated into counts in O(2^n) instead of O(shots).
+
+        Keys are bitstrings with qubit 0 rightmost, as in Qiskit's counts. It
+        draws from the generator differently from :meth:`sample`, so the same
+        seed gives statistically equivalent, not identical, results.
+        """
+        counts = _as_rng(rng).multinomial(shots, self._sampling_distribution())
         return {format(k, f"0{self.n}b"): int(c) for k, c in enumerate(counts) if c}
+
+    def _sampling_distribution(self) -> np.ndarray:
+        # float64 and renormalized: the samplers need sum(p) == 1 to rounding, and norm may have drifted.
+        p = self.probabilities().astype(np.float64)
+        total = p.sum()
+        if total == 0:
+            raise ValueError("cannot sample the zero vector")
+        return p / total
 
     # -- misc ---------------------------------------------------------------
 
