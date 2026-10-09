@@ -28,30 +28,12 @@ from pathlib import Path
 import numpy as np
 
 from quantum_simulator import gates
-from quantum_simulator.observables import PauliSum
+from quantum_simulator.observables import tfim, tfim_periodic_ground_energy
 from quantum_simulator.state import State
 
 HERE = Path(__file__).parent
 DTYPES = {"complex64": np.complex64, "complex128": np.complex128}
 EPS = {"complex64": np.finfo(np.float32).eps, "complex128": np.finfo(np.float64).eps}
-
-
-# -- the known answer ----------------------------------------------------------
-
-def tfim_periodic(n: int, g: float) -> PauliSum:
-    def label(ops: dict[int, str]) -> str:
-        return "".join(ops.get(q, "I") for q in reversed(range(n)))  # qubit 0 rightmost
-
-    terms = [(label({i: "Z", (i + 1) % n: "Z"}), -1.0) for i in range(n)]
-    terms += [(label({i: "X"}), -g) for i in range(n)]
-    return PauliSum(terms)
-
-
-def tfim_exact_energy(n: int, g: float) -> float:
-    if n % 2:
-        raise ValueError("closed form used here holds for even n")
-    k = np.pi * (2 * np.arange(n) + 1) / n
-    return float(-np.sum(np.sqrt(1 + g**2 - 2 * g * np.cos(k))))
 
 
 # -- the echo -------------------------------------------------------------------
@@ -75,8 +57,8 @@ def backward(state: State, params: np.ndarray) -> None:
 
 
 def run_echo(n: int, depths: list[int], seeds: int, g: float) -> dict:
-    h = tfim_periodic(n, g)
-    e_exact = tfim_exact_energy(n, g)
+    h = tfim(n, J=1.0, h=g, periodic=True)
+    e_exact = tfim_periodic_ground_energy(n, J=1.0, h=g)
     e_ed, gs = h.ground_state()  # complex128 exact diagonalization
     assert abs(e_ed - e_exact) < 1e-9 * abs(e_exact), (e_ed, e_exact)
 

@@ -199,6 +199,43 @@ class TestObservablesMatchQiskit(unittest.TestCase):
 
 
 @unittest.skipIf(QuantumCircuit is None, "qiskit not installed")
+class TestPauliHelpersMatchQiskit(unittest.TestCase):
+    def test_pauli_string_matches_sparse_list(self):
+        from quantum_simulator.observables import pauli_string
+
+        # Qiskit's from_sparse_list places each letter on an explicit qubit index.
+        cases = [(4, {0: "Z"}), (4, {3: "X", 1: "Y"}), (5, {0: "Z", 4: "Z"}), (3, {2: "X", 1: "Z", 0: "Y"})]
+        for n, ops in cases:
+            with self.subTest(n=n, ops=ops):
+                qubits = sorted(ops)
+                ref = SparsePauliOp.from_sparse_list([("".join(ops[q] for q in qubits), qubits, 1.0)], n)
+                ours = PauliSum([(pauli_string(n, ops), 1.0)])
+                np.testing.assert_allclose(ours.to_matrix(), ref.to_matrix(), atol=ATOL)
+
+    def test_tfim_matches_qiskit_construction(self):
+        from quantum_simulator.observables import tfim
+
+        n, J, h = 5, 0.8, 1.3
+        bonds = [(i, (i + 1) % n) for i in range(n)]
+        ref = SparsePauliOp.from_sparse_list(
+            [("ZZ", list(b), -J) for b in bonds] + [("X", [i], -h) for i in range(n)], n
+        )
+        np.testing.assert_allclose(tfim(n, J, h, periodic=True).to_matrix(), ref.to_matrix(), atol=ATOL)
+
+    def test_expectations_including_fast_path(self):
+        from quantum_simulator.observables import tfim, z_expectation
+
+        rng = np.random.default_rng(6)
+        h = tfim(6, 1.0, 0.7, periodic=True)
+        op = SparsePauliOp.from_list(list(h.terms))
+        for _ in range(5):
+            sv = _random_statevector(6, rng)
+            self.assertAlmostEqual(h.expectation(sv.data), sv.expectation_value(op).real, places=12)
+            zz = SparsePauliOp.from_sparse_list([("ZZZ", [0, 2, 5], 1.0)], 6)
+            self.assertAlmostEqual(z_expectation(sv.data, [0, 2, 5]), sv.expectation_value(zz).real, places=12)
+
+
+@unittest.skipIf(QuantumCircuit is None, "qiskit not installed")
 class TestEntanglementMatchesQiskit(unittest.TestCase):
     def test_reduced_density_matrix_and_entropy(self):
         rng = np.random.default_rng(5)

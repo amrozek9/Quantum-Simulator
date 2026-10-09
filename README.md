@@ -27,7 +27,7 @@ run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter 
 
 ```sh
 pip install -r requirements.txt     # numpy; qiskit and matplotlib are optional
-python -m unittest discover         # 187 tests; the 21 Qiskit tests skip without qiskit
+python -m unittest discover         # 210 tests; the 24 Qiskit tests skip without qiskit
 ```
 
 ## Conventions
@@ -54,7 +54,7 @@ python -m unittest discover         # 187 tests; the 21 Qiskit tests skip withou
 | `state` | `State`, the index convention, `apply_gate`, precision handling, measurement and sampling |
 | `linalg` | inner product, fidelity, unitary/Hermitian checks, `kron` |
 | `gates` | standard gates and rotations, `controlled()`, `fuse()` |
-| `observables` | `PauliSum`: expectation and variance without building the matrix, exact diagonalization |
+| `observables` | `PauliSum`: expectation and variance without building the matrix (Z-only terms from probabilities alone), exact diagonalization; `pauli_string`, `z_expectation`, `z_correlation`, `tfim` and its closed-form ground energy |
 | `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy |
 | `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions), `run`, DAG, depth, layers, single-qubit gate fusion |
 | `interop` | `to_qiskit`: export a `Circuit`, with bound or symbolic parameters |
@@ -75,7 +75,11 @@ python -m unittest discover         # 187 tests; the 21 Qiskit tests skip withou
 
 The only places a 2ⁿ × 2ⁿ matrix is ever built are `PauliSum.to_matrix` and
 the exact diagonalization that uses it. Expectation values, variances and
-`H|ψ⟩` apply one Pauli at a time to the state tensor.
+`H|ψ⟩` apply one Pauli at a time to the state tensor, except that terms
+made only of Z and I skip gates entirely: their expectation is a signed sum
+of probabilities. For a Hermitian observable, an imaginary part above
+rounding level raises an error instead of being dropped, because it means
+something upstream is wrong.
 
 ## How correctness is checked
 
@@ -90,10 +94,11 @@ with it:
 | `test_standard_gates.py` | 33 | What X, Y, Z, H, S, T, RX, RY, RZ, CNOT and CZ *do*: action on basis states and eigenstates, Pauli algebra, phase-gate powers, rotation laws and Bloch-sphere geometry, CNOT/CZ truth tables, Bell states, phase kickback; state tests run in both precisions |
 | `test_measurement.py` | 27 | Collapse against an independent projection over flat indices; Bell and GHZ correlations; Born-rule frequencies; repeated measurement; norm-drift handling; the rounding-noise cutoff in both precisions; required, reproducible `rng` |
 | `test_observables.py` | 12 | Known physics: Heisenberg singlet at −3, two-site Ising ground energy −√(1+4g²), zero variance in eigenstates |
+| `test_expectation.py` | 20 | `pauli_string` labels; the Z-only fast path against applying gates, in both precisions and with gates disabled; a simulated upstream bug tripping the imaginary-part check; ⟨ZᵢZⱼ⟩ on product, GHZ, ordered and disordered states; the TFIM closed form against exact diagonalization |
 | `test_entanglement.py` | 7 | Bell and GHZ entropies, product states, a brute-force partial trace |
 | `test_precision.py` | 12 | complex64 stays complex64 through every operation and agrees with complex128 to single precision |
 | `test_circuit.py` | 32 | Building and validation; `run` against applying gates by hand; parameter reuse; classical control; teleportation on all four branches; depth and layers worked out by hand; fusion keeps the state and measurement results, merges in the right order, and never crosses a measurement, condition or two-qubit gate |
-| `test_qiskit_parity.py` | 21 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `SparsePauliOp`, `partial_trace`, `entropy` |
+| `test_qiskit_parity.py` | 24 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy` |
 
 To confirm the gate tests can actually fail, nine bugs were planted in the
 gates one at a time. These included a wrong sign on Y, S swapped for S†,
@@ -145,22 +150,22 @@ gates):
 
 | n | complex64 | complex128 | complex64, renormalized | complex128, renormalized |
 |---|---|---|---|---|
-| 4 | 3.3e-6 | 2.4e-14 | 2.6e-8 | 1.7e-16 |
-| 8 | 2.3e-6 | 4.8e-14 | 1.0e-7 | 1.7e-16 |
-| 12 | 5.0e-6 | 6.4e-14 | 2.4e-7 | 2.3e-16 |
+| 4 | 3.3e-6 | 2.4e-14 | 4.2e-8 | 1.7e-16 |
+| 8 | 2.3e-6 | 4.8e-14 | 4.7e-8 | 1.7e-16 |
+| 12 | 5.2e-6 | 6.4e-14 | 5.4e-8 | 2.3e-16 |
 
 Time per single-qubit gate (median of 15; NumPy 2.5.3, one Windows machine):
 
 | n | complex64 | complex128 | speedup | memory (c64 / c128) |
 |---|---|---|---|---|
-| 20 | 4.0 ms | 6.2 ms | 1.6× | 8 / 16 MiB |
-| 22 | 12.4 ms | 20.7 ms | 1.7× | 32 / 64 MiB |
-| 24 | 41.4 ms | 82.9 ms | 2.0× | 128 / 256 MiB |
+| 20 | 3.7 ms | 6.1 ms | 1.7× | 8 / 16 MiB |
+| 22 | 12.6 ms | 22.0 ms | 1.7× | 32 / 64 MiB |
+| 24 | 42.9 ms | 89.2 ms | 2.1× | 128 / 256 MiB |
 
 **What this shows:**
 
 1. **complex64 costs about 8 decimal digits of energy accuracy.** Its error
-   starts at machine epsilon (~1e-7) and grows to a few parts per million
+   starts below machine epsilon (2e-8 to 6e-8) and grows to a few parts per million
    after 1,000 layers. Whether that matters depends on the absolute scale:
    chemical accuracy (1.6 mHa) on a molecular total energy of about 100 Ha
    is 1.6e-5 relative. At depth 1000 the median complex64 run meets that
@@ -175,14 +180,22 @@ Time per single-qubit gate (median of 15; NumPy 2.5.3, one Windows machine):
    relative energy error is almost exactly twice the norm error
    |‖ψ‖ − 1|, as expected since E is quadratic in ψ. Reporting the
    Rayleigh quotient ⟨ψ|H|ψ⟩ / ⟨ψ|ψ⟩ instead of ⟨ψ|H|ψ⟩ brings the depth-1000
-   complex64 error back to ε level (≤ 3e-7, with the norm itself computed in
-   float32), at the cost of one extra inner product. **Caveat:** that recovery is this large because the echo ends in
-   an eigenstate, where errors in the state's direction move the energy only
-   at second order. Near a variational minimum, which is where VQE ends up,
-   the same holds. Far from one it doesn't.
-4. **The speedup is 1.6–2×, growing with n** as the state stops fitting
+   complex64 error below ε (≤ 8e-8, with the norm itself computed in
+   float32), at the cost of one extra inner product. **Caveat:** that
+   recovery is this large because the echo ends in an eigenstate, where
+   errors in the state's direction move the energy only at second order.
+   Near a variational minimum, which is where VQE ends up, the same holds.
+   Far from one it doesn't.
+4. **The speedup is 1.7–2.1×, growing with n** as the state stops fitting
    in cache. Together with half the memory, that's the gain to set against
    items 1 and 3.
+5. **How the energy is evaluated matters too.** Z-only terms are summed
+   from probabilities in float64; other terms go through gates and an inner
+   product accumulated in the state's precision. Switching the ZZ terms to
+   the probability path lowered the renormalized complex64 error at n = 12
+   from 2.4e-7 to 5.4e-8, and the depth-0 error from 1.5e-7 to 3e-8, with
+   the state evolution unchanged (the norm errors match to every digit).
+   Part of complex64's apparent floor was the evaluation, not the state.
 
 Reproduce with `python -m experiments.precision` (about 4 minutes). It
 writes the raw numbers to `experiments/results/precision.json` and both
@@ -195,13 +208,13 @@ quantum_simulator/
   state.py          State, index convention, apply_gate, precision
   linalg.py         inner, fidelity, dagger, unitary/Hermitian checks, kron
   gates.py          gate matrices, controlled(), fuse()
-  observables.py    PauliSum, exact diagonalization
+  observables.py    PauliSum, Z fast path, correlations, TFIM, exact diagonalization
   entanglement.py   Schmidt decomposition, reduced density matrices, entropies
   circuit.py        Op, Circuit, run, DAG, fusion
   interop.py        to_qiskit
 tests/
   reference.py      naive loop-based implementations used as ground truth
-  test_*.py         187 tests (see above)
+  test_*.py         210 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   results/          raw numbers (precision.json)
@@ -225,6 +238,9 @@ Done so far:
 7. Circuits as data: `Op` and `Circuit` with parameters stored as indices,
    classical bits and conditioned gates, an executor, a dependency graph
    with depth and layers, single-qubit gate fusion, and `to_qiskit`.
+8. Observables: a gate-free fast path for Z-only terms, a hard error when a
+   Hermitian expectation comes out complex, ⟨ZᵢZⱼ⟩ correlations,
+   `pauli_string`, and a shared `tfim` with its closed-form ground energy.
 
 Not covered yet:
 
