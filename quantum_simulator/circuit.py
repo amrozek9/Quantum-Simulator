@@ -23,6 +23,7 @@ test for :func:`fuse_single_qubit_gates`.
 from __future__ import annotations
 
 import dataclasses
+import functools
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -45,6 +46,32 @@ PARAMETRIC_GATES = {
 }
 _ARITY = {name: m.shape[0].bit_length() - 1 for name, m in FIXED_GATES.items()}
 _ARITY |= {name: f(0.0).shape[0].bit_length() - 1 for name, f in PARAMETRIC_GATES.items()}
+
+# Gates on any number (>= 2) of qubits: the controls first, the target last.
+MULTI_CONTROLLED = frozenset({"mcx", "mcz"})
+
+_SELF_INVERSE = frozenset({"i", "x", "y", "z", "h", "cx", "cy", "cz", "ch", "swap", "ccx"}) | MULTI_CONTROLLED
+_INVERSE_NAME = {"s": "sdg", "sdg": "s", "t": "tdg", "tdg": "t"}
+
+
+@functools.lru_cache(maxsize=None)
+def multi_controlled_matrix(name: str, n_qubits: int) -> np.ndarray:
+    """``mcx`` or ``mcz`` on ``n_qubits`` qubits ``(controls..., target)``, in gate-matrix order.
+
+    The controls are the low bits, so the all-controls-on block is the pair
+    of indices ``2^k - 1`` (target 0) and ``2^(k+1) - 1`` (target 1).
+    """
+    if name not in MULTI_CONTROLLED or n_qubits < 2:
+        raise ValueError(f"{name} needs at least 2 qubits")
+    k = n_qubits - 1
+    m = np.eye(2**n_qubits, dtype=np.complex128)
+    lo, hi = 2**k - 1, 2 ** (k + 1) - 1
+    if name == "mcx":
+        m[[lo, hi]] = m[[hi, lo]]
+    else:
+        m[hi, hi] = -1
+    m.flags.writeable = False
+    return m
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +133,14 @@ class Circuit:
     def ccx(self, c0: int, c1: int, target: int) -> Circuit: return self._gate("ccx", c0, c1, target)
 
     cnot = cx
+
+    def mcx(self, controls: Sequence[int], target: int) -> Circuit:
+        """X on ``target`` if every control is 1 (Toffoli for two controls)."""
+        return self._gate("mcx", *controls, target)
+
+    def mcz(self, *qubits: int) -> Circuit:
+        """Phase -1 on the all-ones state of ``qubits``; symmetric, so no qubit is special."""
+        return self._gate("mcz", *qubits)
 
     # -- parameterized gates ------------------------------------------------------
     #
@@ -221,6 +256,57 @@ class Circuit:
         """Number of layers: the longest chain of ops that depend on each other."""
         return len(self.layers())
 
+    def inverse(self) -> Circuit:
+        """The circuit that undoes this one: ops in reverse order, each inverted.
+
+        Fixed-angle rotations are negated, S and T become S-dagger and
+        T-dagger, and self-inverse gates stay. Measurements and conditions
+        are not reversible; parameterized gates (an index, not an angle) and
+        gates whose inverse is not in the gate set (``sx``, ``iswap``) are
+        rejected too.
+        """
+        out = Circuit(self.n, self.n_clbits)
+        for op in reversed(self.ops):
+            out.append(_inverse_op(op))
+        return out
+
+    def compose(self, other: Circuit, qubits: Sequence[int] | None = None) -> Circuit:
+        """Append ``other``'s ops, with its qubit ``i`` placed on ``qubits[i]``; returns ``self``.
+
+        ``other`` must be a fixed unitary block: no parameter indices and no
+        classical bits, since those would need renumbering.
+        """
+        qubits = list(range(other.n)) if qubits is None else list(qubits)
+        if len(qubits) != other.n:
+            raise ValueError(f"other has {other.n} qubits, got a map onto {len(qubits)}")
+        if other.n_params or other.n_clbits:
+            raise ValueError("compose takes circuits without parameter indices or classical bits")
+
+        def remap(op: Op) -> Op:
+            return dataclasses.replace(
+                op, qubits=tuple(qubits[q] for q in op.qubits), ops=tuple(remap(o) for o in op.ops)
+            )
+
+        for op in other.ops:
+            self.append(remap(op))
+        return self
+
+
+def _inverse_op(op: Op) -> Op:
+    if op.name == "measure" or op.condition is not None:
+        raise ValueError(f"cannot invert a measurement or a conditioned op: {op}")
+    if op.name == "fused":
+        return dataclasses.replace(op, ops=tuple(_inverse_op(o) for o in reversed(op.ops)))
+    if op.name in _SELF_INVERSE:
+        return op
+    if op.name in _INVERSE_NAME:
+        return dataclasses.replace(op, name=_INVERSE_NAME[op.name])
+    if op.name in PARAMETRIC_GATES:
+        if op.param is not None:
+            raise ValueError(f"cannot invert a parameterized gate (it holds an index, not an angle): {op}")
+        return dataclasses.replace(op, value=-op.value)
+    raise ValueError(f"no inverse for {op.name} in the gate set")
+
 
 def _validate(op: Op, n: int, n_clbits: int) -> None:
     for q in op.qubits:
@@ -244,6 +330,10 @@ def _validate(op: Op, n: int, n_clbits: int) -> None:
             if o.qubits != op.qubits or o.condition is not None or o.name in ("measure", "fused"):
                 raise ValueError(f"fused ops must be unconditioned gates on {op.qubits}: {o}")
             _validate(o, n, n_clbits)
+        return
+    if op.name in MULTI_CONTROLLED:
+        if len(op.qubits) < 2 or op.param is not None or op.value is not None:
+            raise ValueError(f"{op.name} needs at least 2 qubits and takes no parameter: {op}")
         return
     if op.name not in _ARITY:
         raise ValueError(f"unknown gate {op.name!r}")
@@ -282,6 +372,8 @@ def op_matrix(op: Op, params: Sequence[float] | np.ndarray | None = None) -> np.
     """The unitary for a gate op, with its angle taken from ``params`` if it has one."""
     if op.name in FIXED_GATES:
         return FIXED_GATES[op.name]
+    if op.name in MULTI_CONTROLLED:
+        return multi_controlled_matrix(op.name, len(op.qubits))
     if op.name in PARAMETRIC_GATES:
         if op.value is not None:
             return PARAMETRIC_GATES[op.name](op.value)

@@ -30,7 +30,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402  (after the config update)
 import numpy as np  # noqa: E402
 
-from .circuit import FIXED_GATES, PARAMETRIC_GATES, Circuit, Op  # noqa: E402
+from .circuit import FIXED_GATES, MULTI_CONTROLLED, PARAMETRIC_GATES, Circuit, Op, multi_controlled_matrix  # noqa: E402
 from .observables import PAULIS, PauliSum  # noqa: E402
 from .state import resolve_dtype  # noqa: E402
 
@@ -100,6 +100,8 @@ def make_state(circuit: Circuit, dtype=None) -> Callable:
     def matrix(op: Op, params):
         if op.name in fixed:
             return fixed[op.name]
+        if op.name in MULTI_CONTROLLED:
+            return jnp.asarray(multi_controlled_matrix(op.name, len(op.qubits)), dtype=dt)
         if op.name == "fused":
             # Time order A, B, ... is the product ... B @ A.
             return reduce(lambda acc, m: m @ acc, (matrix(o, params) for o in op.ops))

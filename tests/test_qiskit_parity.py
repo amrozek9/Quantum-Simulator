@@ -199,6 +199,37 @@ class TestObservablesMatchQiskit(unittest.TestCase):
 
 
 @unittest.skipIf(QuantumCircuit is None, "qiskit not installed")
+class TestAlgorithmsMatchQiskit(unittest.TestCase):
+    def test_qft_is_qiskits_qft_gate(self):
+        from quantum_simulator.algorithms import qft
+        from tests.test_algorithms import unitary_of
+
+        for n in range(1, 6):
+            with self.subTest(n=n):
+                np.testing.assert_allclose(unitary_of(qft(n)), Operator(lib.QFTGate(n)).data, atol=1e-12)
+
+    def test_exported_algorithm_circuits(self):
+        from quantum_simulator import algorithms as alg
+        from quantum_simulator.circuit import run
+        from quantum_simulator.interop import to_qiskit
+
+        for c in [alg.ghz(6), alg.bernstein_vazirani(0b1011, 4), alg.grover(5, 0b10011),
+                  alg.phase_estimation(0.3, 5), alg.qft(5).inverse()]:
+            with self.subTest(n=c.n, ops=len(c.ops)):
+                np.testing.assert_allclose(run(c).state.vector, Statevector(to_qiskit(c)).data, atol=1e-10)
+
+    def test_multi_controlled_gates(self):
+        from quantum_simulator.circuit import Circuit, run
+        from quantum_simulator.interop import to_qiskit
+
+        rng = np.random.default_rng(30)
+        for c in [Circuit(5).mcx([4, 0, 2], 1), Circuit(5).mcz(3, 0, 4, 1, 2), Circuit(3).mcx([2], 0)]:
+            sv = _random_statevector(c.n, rng)
+            ours = run(c, initial=State(sv.data)).state.vector
+            np.testing.assert_allclose(ours, sv.evolve(to_qiskit(c)).data, atol=1e-12)
+
+
+@unittest.skipIf(QuantumCircuit is None, "qiskit not installed")
 class TestPauliHelpersMatchQiskit(unittest.TestCase):
     def test_pauli_string_matches_sparse_list(self):
         from quantum_simulator.observables import pauli_string

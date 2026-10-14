@@ -1,4 +1,4 @@
-from . import circuit, entanglement, gates, interop, linalg, observables
+from . import algorithms, circuit, entanglement, gates, interop, linalg, observables
 from .circuit import Circuit, Op, run
 from .linalg import (
     dagger,
@@ -26,6 +26,7 @@ from .state import (
 )
 
 __all__ = [
+    "algorithms",
     "Circuit",
     "DTYPE",
     "Op",

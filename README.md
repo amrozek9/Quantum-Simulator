@@ -26,8 +26,9 @@ run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter 
 ## Setup
 
 ```sh
-pip install -r requirements.txt     # numpy; qiskit, jax and matplotlib are optional
-python -m unittest discover         # 246 tests; the 24 Qiskit and 11 JAX tests skip without them
+pip install -r requirements.txt     # numpy; qiskit, jax, hypothesis and matplotlib are optional
+python -m unittest discover         # 280 tests in about 30 s; tests needing a missing optional package skip
+HYPOTHESIS_PROFILE=thorough python -m unittest tests.test_properties   # 2000 random circuits per property
 ```
 
 ## Conventions
@@ -56,7 +57,8 @@ python -m unittest discover         # 246 tests; the 24 Qiskit and 11 JAX tests 
 | `gates` | standard gates and rotations, `controlled()`, `fuse()` |
 | `observables` | `PauliSum`: expectation and variance without building the matrix (Z-only terms from probabilities alone), exact diagonalization; `pauli_string`, `z_expectation`, `z_correlation`, `tfim` and its closed-form ground energy |
 | `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy, entropy across every cut (`entropy_profile`), Page's formula |
-| `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions), `run`, DAG, depth, layers, single-qubit gate fusion |
+| `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions, multi-controlled `mcx`/`mcz`), `run`, DAG, depth, layers, single-qubit gate fusion, `inverse`, `compose` |
+| `algorithms` | Bell pair, GHZ, teleportation, Bernstein–Vazirani, Grover, QFT, phase estimation, as circuits |
 | `interop` | `to_qiskit`: export a `Circuit`, with bound or symbolic parameters |
 | `jax_backend` | The same simulator as pure JAX functions: `make_state`, `make_energy`, `make_value_and_grad` (compiled, differentiable). Optional; importing it enables JAX's 64-bit mode |
 | `gradients` | Exact gradients by the parameter-shift rule on the NumPy simulator: two terms for RX/RY/RZ/RXX/RYY/RZZ/P/CP, four terms for CRX/CRY/CRZ; also finite differences |
@@ -100,8 +102,57 @@ with it:
 | `test_entanglement.py` | 23 | Bell and GHZ entropies, product states, a brute-force partial trace; entropy profiles; subadditivity, Araki–Lieb and strong subadditivity on random states; Page's formula against sampled states; area law vs log growth vs volume law on 10-qubit chains; no-cloning via CNOT |
 | `test_precision.py` | 12 | complex64 stays complex64 through every operation and agrees with complex128 to single precision |
 | `test_circuit.py` | 32 | Building and validation; `run` against applying gates by hand; parameter reuse; classical control; teleportation on all four branches; depth and layers worked out by hand; fusion keeps the state and measurement results, merges in the right order, and never crosses a measurement, condition or two-qubit gate |
-| `test_gradients.py` | 17 | JAX autodiff against parameter shifts computed on the NumPy simulator (two independent derivations, two independent simulators), on circuits with every parameterized gate and a shared parameter; shift rules against finite differences and closed forms; the two-term rule shown to fail exactly where it should; JAX states and energies against NumPy in both precisions; one compilation serving many parameter sets |
-| `test_qiskit_parity.py` | 24 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy` |
+| `test_gradients.py` | 18 | JAX autodiff against parameter shifts computed on the NumPy simulator (two independent derivations, two independent simulators), on circuits with every parameterized gate and a shared parameter; shift rules against finite differences and closed forms; the two-term rule shown to fail exactly where it should; JAX states and energies against NumPy in both precisions; one compilation serving many parameter sets |
+| `test_qiskit_parity.py` | 27 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy`, QFT against `QFTGate`, the algorithm circuits, multi-controlled gates |
+| `test_properties.py` | 7 | Hypothesis-generated circuits (every gate kind, up to 6 qubits and 30 ops) against Qiskit and against a naive full-matrix simulator; norm, fusion, inverse and scheduling invariants; a planted bug shrunk to a minimal circuit |
+| `test_algorithms.py` | 23 | Each algorithm's defining property (below), plus `mcx`, `mcz`, `inverse` and `compose` |
+
+**Property-based testing.** [`tests/test_properties.py`](tests/test_properties.py)
+uses [Hypothesis](https://hypothesis.readthedocs.io) to generate random
+circuits and checks each against two oracles that share no code with the
+simulator: Qiskit, and a naive simulator that multiplies full 2ⁿ×2ⁿ
+matrices built by looping over bit patterns. The second catches the case
+where this package and Qiskit share a misunderstanding. Qiskit comparisons
+check fidelity, as global phase is unobservable, and also check amplitudes
+exactly, which is stricter and possible because the gate definitions match
+Qiskit's down to the phase. The default profile runs 100 fixed circuits per
+property, so every run tests the same cases. A `thorough` run of 2000
+random circuits per property (about 12,000 circuits, 2 minutes) found no
+failures.
+
+When a property fails, Hypothesis shrinks the failing circuit. A test
+plants the most common bug in a tensor simulator, forgetting the
+`moveaxis` after `tensordot`, which leaves the state normalized but wrong.
+Hypothesis reduces whatever large circuit it first finds to a single
+one-qubit gate on qubit 0 of a two-qubit register, which is the bug in its
+smallest form.
+
+**Algorithms as tests.** Each algorithm in
+[`quantum_simulator/algorithms.py`](quantum_simulator/algorithms.py) has a
+property that only holds if every convention is right:
+
+| Algorithm | Exercises | Asserted |
+|---|---|---|
+| Bell pair | H, CNOT, entanglement | entropy of either qubit is exactly 1 bit |
+| GHZ, n = 1–10 | fan-out control | exactly two amplitudes, at 0 and 2ⁿ−1, each 1/√2 |
+| Teleportation | mid-circuit measurement, classical control | qubit 2 ends in the input state on all four branches |
+| Bernstein–Vazirani | phase kickback | all 32 five-bit secrets recovered with certainty, one oracle query |
+| Grover, n = 8 | multi-controlled Z, amplitude amplification | success 0.99995 after ⌊(π/4)√N⌋ = 12 iterations, then falling; matches sin²((2k+1)θ) to 1e-10 |
+| QFT, n = 1–5 | controlled phases, qubit order | amplitudes e^{2πijk/N}/√N for every input; equals Qiskit's `QFTGate` |
+| Phase estimation | inverse QFT, ancilla register | exact phases m/16 recovered with certainty; others land on the nearest integer with probability ≥ 4/π² |
+
+Grover is worth plotting, because its assertion is a curve. Success peaks
+after 12 iterations and then falls as the search over-rotates, which shows
+that Grover's algorithm is a rotation in a two-dimensional plane, not a
+search that keeps improving:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/grover-dark.png">
+  <img alt="Probability of the marked item against Grover iterations on 8 qubits. Simulated points follow the curve sin squared of (2k+1) theta, peaking at 0.9999 after 12 iterations, falling to nearly 0 at 25, and peaking again near 37." src="experiments/figures/grover-light.png">
+</picture>
+
+Reproduce with `python -m experiments.grover` (a few seconds). Every
+simulated point matches the rotation formula to 1e-13.
 
 To confirm the gate tests can actually fail, nine bugs were planted in the
 gates one at a time. These included a wrong sign on Y, S swapped for S†,
@@ -317,13 +368,16 @@ quantum_simulator/
   interop.py        to_qiskit
   jax_backend.py    the simulator in JAX: compiled, differentiable energies
   gradients.py      parameter-shift and finite-difference gradients
+  algorithms.py     Bell, GHZ, teleportation, Bernstein-Vazirani, Grover, QFT, phase estimation
 tests/
   reference.py      naive loop-based implementations used as ground truth
-  test_*.py         246 tests (see above)
+  strategies.py     Hypothesis strategies for random circuits, and test profiles
+  test_*.py         280 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   entanglement_scaling.py   area law, critical log law, volume law
   gradient_cost.py  autodiff vs parameter shift, time per gradient
+  grover.py         Grover success probability against iterations
   results/          raw numbers, one JSON per experiment
   figures/          light and dark PNG per experiment
 requirements.txt
@@ -356,6 +410,11 @@ Done so far:
     autodiff gradients, exact parameter-shift gradients (two- and four-term
     rules) on the NumPy simulator, tests matching the two to about 1e-16,
     and a measured gradient-cost comparison.
+11. Validation: property-based tests with Hypothesis against Qiskit and a
+    naive full-matrix simulator, a shrinking demonstration, and seven
+    algorithms as tests (Bell, GHZ, teleportation, Bernstein–Vazirani,
+    Grover, QFT, phase estimation), with multi-controlled gates,
+    `Circuit.inverse` and `Circuit.compose` to build them.
 
 Not covered yet:
 
@@ -375,7 +434,7 @@ Not covered yet:
   differentiates unitary circuits only, with no measurement or classical
   control.
 - **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2,
-  JAX 0.11.2 (CPU) and matplotlib 3.11.2 on Windows 11. The minimum versions in
+  JAX 0.11.2 (CPU), Hypothesis 6.169.1 and matplotlib 3.11.2 on Windows 11. The minimum versions in
   `requirements.txt` haven't been tested, and there is no CI.
 - **The precision study covers one model and one ansatz**, and its timings
   come from one machine. Other Hamiltonians, deeper circuits or

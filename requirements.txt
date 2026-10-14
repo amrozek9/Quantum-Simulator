@@ -9,6 +9,10 @@ numpy>=2.0
 # Tested with 2.5.2.
 qiskit>=2.0
 
+# Needed only for tests/test_properties.py (property-based tests), which is
+# skipped without it. Tested with 6.169.1.
+hypothesis>=6.100
+
 # Needed only for the differentiable backend (quantum_simulator.jax_backend),
 # tests/test_gradients.py's autodiff tests and experiments/gradient_cost.py.
 # Tested with 0.11.2 (CPU).

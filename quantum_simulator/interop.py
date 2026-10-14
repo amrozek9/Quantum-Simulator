@@ -50,5 +50,9 @@ def _emit(qc, op: Op, values) -> None:
         getattr(qc, op.name)(angle, *op.qubits)  # method names match Qiskit's
     elif op.name == "i":
         qc.id(op.qubits[0])
+    elif op.name == "mcx":
+        qc.mcx(list(op.qubits[:-1]), op.qubits[-1])
+    elif op.name == "mcz":
+        qc.mcp(np.pi, list(op.qubits[:-1]), op.qubits[-1])  # a phase of pi on all-ones is Z
     else:
         getattr(qc, op.name)(*op.qubits)

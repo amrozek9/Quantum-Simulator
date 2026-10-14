@@ -151,6 +151,13 @@ class TestJaxMatchesNumpy(unittest.TestCase):
                 fused = fuse_single_qubit_gates(c)
                 np.testing.assert_allclose(np.asarray(jb.make_state(fused)(params)), expected, atol=1e-12)
 
+    def test_multi_controlled_gates_and_algorithm_circuits(self):
+        from quantum_simulator import algorithms as alg
+
+        for c in [alg.grover(4, 0b1011), alg.phase_estimation(0.3, 4), Circuit(4).h(0).h(1).mcx([0, 1, 3], 2)]:
+            with self.subTest(n=c.n, ops=len(c.ops)):
+                np.testing.assert_allclose(np.asarray(jb.make_state(c)([])), run(c).state.psi, atol=1e-12)
+
     def test_energies(self):
         rng = np.random.default_rng(4)
         for n in (2, 3, 4):
