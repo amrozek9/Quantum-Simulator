@@ -9,6 +9,11 @@ numpy>=2.0
 # Tested with 2.5.2.
 qiskit>=2.0
 
+# Needed only for the differentiable backend (quantum_simulator.jax_backend),
+# tests/test_gradients.py's autodiff tests and experiments/gradient_cost.py.
+# Tested with 0.11.2 (CPU).
+jax>=0.11
+
 # Needed only to draw the figures in experiments/ (py -m experiments.precision).
 # Tested with 3.11.2.
 matplotlib>=3.8

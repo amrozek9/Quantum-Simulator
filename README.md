@@ -26,8 +26,8 @@ run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter 
 ## Setup
 
 ```sh
-pip install -r requirements.txt     # numpy; qiskit and matplotlib are optional
-python -m unittest discover         # 229 tests; the 24 Qiskit tests skip without qiskit
+pip install -r requirements.txt     # numpy; qiskit, jax and matplotlib are optional
+python -m unittest discover         # 246 tests; the 24 Qiskit and 11 JAX tests skip without them
 ```
 
 ## Conventions
@@ -58,6 +58,8 @@ python -m unittest discover         # 229 tests; the 24 Qiskit tests skip withou
 | `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy, entropy across every cut (`entropy_profile`), Page's formula |
 | `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions), `run`, DAG, depth, layers, single-qubit gate fusion |
 | `interop` | `to_qiskit`: export a `Circuit`, with bound or symbolic parameters |
+| `jax_backend` | The same simulator as pure JAX functions: `make_state`, `make_energy`, `make_value_and_grad` (compiled, differentiable). Optional; importing it enables JAX's 64-bit mode |
+| `gradients` | Exact gradients by the parameter-shift rule on the NumPy simulator: two terms for RX/RY/RZ/RXX/RYY/RZZ/P/CP, four terms for CRX/CRY/CRZ; also finite differences |
 
 ## The linear algebra, and where it lives
 
@@ -98,6 +100,7 @@ with it:
 | `test_entanglement.py` | 23 | Bell and GHZ entropies, product states, a brute-force partial trace; entropy profiles; subadditivity, Araki–Lieb and strong subadditivity on random states; Page's formula against sampled states; area law vs log growth vs volume law on 10-qubit chains; no-cloning via CNOT |
 | `test_precision.py` | 12 | complex64 stays complex64 through every operation and agrees with complex128 to single precision |
 | `test_circuit.py` | 32 | Building and validation; `run` against applying gates by hand; parameter reuse; classical control; teleportation on all four branches; depth and layers worked out by hand; fusion keeps the state and measurement results, merges in the right order, and never crosses a measurement, condition or two-qubit gate |
+| `test_gradients.py` | 17 | JAX autodiff against parameter shifts computed on the NumPy simulator (two independent derivations, two independent simulators), on circuits with every parameterized gate and a shared parameter; shift rules against finite differences and closed forms; the two-term rule shown to fail exactly where it should; JAX states and energies against NumPy in both precisions; one compilation serving many parameter sets |
 | `test_qiskit_parity.py` | 24 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy` |
 
 To confirm the gate tests can actually fail, nine bugs were planted in the
@@ -240,6 +243,67 @@ The tests show the concrete case: CNOT copies |0⟩ and |1⟩ onto a blank qubit
 so by linearity it must turn |+⟩⊗|0⟩ into a Bell state, which has fidelity ½
 with |+⟩⊗|+⟩.
 
+## Gradients: autodiff against the parameter-shift rule
+
+[`jax_backend`](quantum_simulator/jax_backend.py) runs the same simulator
+as pure JAX functions, so `jax.grad` differentiates the energy with respect
+to every circuit parameter at once:
+
+```python
+from quantum_simulator import Circuit
+from quantum_simulator.jax_backend import make_value_and_grad
+from quantum_simulator.observables import tfim
+
+ansatz = Circuit(2).ry(0).ry(1).cx(0, 1)
+value_and_grad = make_value_and_grad(ansatz, tfim(2))   # compiled once
+energy, gradient = value_and_grad([0.3, 1.2])           # any parameter array
+```
+
+Hardware can't backpropagate. It uses the parameter-shift rule instead,
+which [`gradients`](quantum_simulator/gradients.py) implements on the
+NumPy simulator. The tests check one against the other, two independent
+derivations on two independent simulators, and they agree to about
+1e-16. Two details matter:
+
+- **The two-term rule [f(θ+π/2) − f(θ−π/2)]/2 is exact only for some gates.**
+  It holds when the gate's generator has two eigenvalues, as for RX, RY,
+  RZ, RXX, RYY, RZZ, P and CP. CRX, CRY and CRZ have generator eigenvalues
+  0 and ±½, so the energy has a half-frequency component and needs a
+  four-term rule. With H on the control and CRX(θ) onto the target,
+  ⟨X_control⟩ = cos(θ/2): the two-term rule gives −sin(θ/2)/√2 instead of
+  the correct −sin(θ/2)/2. A test checks exactly this.
+- **A parameter shared by several gates** gets one shift per gate, summed.
+
+[`experiments/gradient_cost.py`](experiments/gradient_cost.py) measures
+what a gradient costs on 8 qubits as the ansatz deepens, after checking
+that all three methods return the same gradient:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/gradient-cost-dark.png">
+  <img alt="Left: seconds per gradient against number of parameters, log-log. Parameter shift on the NumPy simulator rises from 0.04 to 4 seconds, parameter shift on the compiled JAX energy from 0.009 to 0.31 seconds, and JAX autodiff from 0.3 to 2 milliseconds. Right: cost in units of one energy evaluation. Parameter shift follows the 2 times parameters line; autodiff stays between 1.5 and 2.8." src="experiments/figures/gradient-cost-light.png">
+</picture>
+
+| Parameters | One energy | Autodiff gradient | In energies | Shift, JAX | Shift, NumPy |
+|---|---|---|---|---|---|
+| 16 | 0.21 ms | 0.31 ms | 1.5 | 9 ms (30×) | 0.04 s (144×) |
+| 64 | 0.33 ms | 0.77 ms | 2.3 | 56 ms (72×) | 0.51 s (662×) |
+| 192 | 0.72 ms | 1.99 ms | 2.8 | 0.31 s (155×) | 4.1 s (2047×) |
+
+The parenthesized factors are how much slower each method is than
+autodiff. Autodiff costs 1.5–2.8 energy evaluations at every size, which is
+the guide's "roughly two forward passes, regardless of how many parameters".
+Parameter shift costs two evaluations per parameter, so the gap grows
+linearly with the parameter count.
+
+**The cost the guide doesn't mention: compilation.** `jax.jit` unrolls the
+circuit's gate loop when it traces it, and compiling took 14 s at 16
+parameters and 31 s at 192 on this machine. It's paid once per circuit
+structure, which a long variational loop amortizes, but for a single
+gradient it dominates.
+
+Reproduce with `python -m experiments.gradient_cost` (about 4 minutes,
+mostly compilation). Timings are from one Windows machine, CPU only.
+
 ## Project layout
 
 ```text
@@ -251,12 +315,15 @@ quantum_simulator/
   entanglement.py   Schmidt decomposition, reduced density matrices, entropies, Page's formula
   circuit.py        Op, Circuit, run, DAG, fusion
   interop.py        to_qiskit
+  jax_backend.py    the simulator in JAX: compiled, differentiable energies
+  gradients.py      parameter-shift and finite-difference gradients
 tests/
   reference.py      naive loop-based implementations used as ground truth
-  test_*.py         229 tests (see above)
+  test_*.py         246 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   entanglement_scaling.py   area law, critical log law, volume law
+  gradient_cost.py  autodiff vs parameter shift, time per gradient
   results/          raw numbers, one JSON per experiment
   figures/          light and dark PNG per experiment
 requirements.txt
@@ -285,6 +352,10 @@ Done so far:
    area-law experiment with a fitted central charge, and the no-cloning
    note on `copy()`. Exact diagonalization got about 8× faster along the
    way (direct Pauli-matrix construction, real arithmetic when possible).
+10. Differentiable simulation: a JAX backend with compiled energies and
+    autodiff gradients, exact parameter-shift gradients (two- and four-term
+    rules) on the NumPy simulator, tests matching the two to about 1e-16,
+    and a measured gradient-cost comparison.
 
 Not covered yet:
 
@@ -298,8 +369,13 @@ Not covered yet:
 - **Exact diagonalization is dense**, so it's capped at 12 qubits by default
   (`max_qubits` raises the cap); a 12-qubit ground state takes about 10
   seconds. A sparse or Lanczos solver would go further.
-- **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2 and
-  matplotlib 3.11.2 on Windows 11. The minimum versions in
+- **JAX compilation time grows with circuit length**, because the gate loop
+  is unrolled at trace time (31 s at 192 parameters). Expressing repeated
+  layers with `jax.lax.scan` would make it roughly constant. The JAX backend
+  differentiates unitary circuits only, with no measurement or classical
+  control.
+- **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2,
+  JAX 0.11.2 (CPU) and matplotlib 3.11.2 on Windows 11. The minimum versions in
   `requirements.txt` haven't been tested, and there is no CI.
 - **The precision study covers one model and one ansatz**, and its timings
   come from one machine. Other Hamiltonians, deeper circuits or
