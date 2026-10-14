@@ -1,4 +1,4 @@
-"""Measurement (collapse) and sampling, Part 2 of the guide.
+"""Measurement (collapse) and sampling.
 
 The collapse checks compare against an independent projection written over
 flat little-endian indices, so they test the qubit-axis convention too.

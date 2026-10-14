@@ -1,4 +1,4 @@
-"""Observables and expectation values (Part 4): labels, the diagonal fast path,
+"""Observables and expectation values: labels, the diagonal fast path,
 the imaginary-part check, Z correlations, and the transverse-field Ising model.
 """
 

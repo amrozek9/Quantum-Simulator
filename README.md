@@ -290,12 +290,12 @@ that all three methods return the same gradient:
 | 192 | 0.72 ms | 1.99 ms | 2.8 | 0.31 s (155×) | 4.1 s (2047×) |
 
 The parenthesized factors are how much slower each method is than
-autodiff. Autodiff costs 1.5–2.8 energy evaluations at every size, which is
-the guide's "roughly two forward passes, regardless of how many parameters".
-Parameter shift costs two evaluations per parameter, so the gap grows
-linearly with the parameter count.
+autodiff. Autodiff costs 1.5–2.8 energy evaluations at every size: roughly
+two forward passes, however many parameters there are. Parameter shift
+costs two evaluations per parameter, so the gap grows linearly with the
+parameter count.
 
-**The cost the guide doesn't mention: compilation.** `jax.jit` unrolls the
+**The hidden cost: compilation.** `jax.jit` unrolls the
 circuit's gate loop when it traces it, and compiling took 14 s at 16
 parameters and 31 s at 192 on this machine. It's paid once per circuit
 structure, which a long variational loop amortizes, but for a single

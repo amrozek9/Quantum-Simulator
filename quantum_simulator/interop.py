@@ -1,4 +1,4 @@
-"""Conversion to Qiskit, so circuits can be checked against Qiskit (Part 7 of the guide).
+"""Conversion to Qiskit, so circuits can be checked against Qiskit.
 
 Qiskit is imported lazily: the rest of the package does not need it.
 """

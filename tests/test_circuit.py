@@ -1,4 +1,4 @@
-"""Circuits as data (Part 3): building, validation, execution, scheduling, fusion."""
+"""Circuits as data: building, validation, execution, scheduling, fusion."""
 
 import unittest
 

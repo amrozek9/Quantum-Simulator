@@ -9,7 +9,7 @@ ways and checked to agree:
   * Parameter shift on the compiled JAX energy: 2 evaluations per parameter.
   * Parameter shift on the NumPy simulator: the same rule, uncompiled.
 
-The claim being tested (Part 6 of the guide) is that autodiff costs a small
+The claim being tested is that autodiff costs a small
 constant number of energy evaluations however many parameters there are,
 while parameter shift costs two per parameter.
 

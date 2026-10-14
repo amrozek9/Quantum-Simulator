@@ -1,4 +1,4 @@
-"""Differentiable simulation (Part 6): JAX autodiff against the parameter-shift rule.
+"""Differentiable simulation: JAX autodiff against the parameter-shift rule.
 
 The central test compares two independent derivations of the same gradient,
 computed by two independent simulators: reverse-mode autodiff through the
@@ -174,7 +174,7 @@ class TestJaxMatchesNumpy(unittest.TestCase):
 
 @needs_jax
 class TestAutodiffMatchesParameterShift(unittest.TestCase):
-    """The guide's "best test in the repository", on two independent simulators."""
+    """Two independent derivations of the same gradient, on two independent simulators."""
 
     def test_every_parametric_gate_and_a_shared_parameter(self):
         rng = np.random.default_rng(6)

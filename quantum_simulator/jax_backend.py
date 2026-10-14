@@ -1,4 +1,4 @@
-"""Differentiable simulation with JAX (Part 6 of the guide).
+"""Differentiable simulation with JAX.
 
 The same tensor layout, qubit order and gate conventions as the NumPy
 simulator, written as pure functions in ``jax.numpy`` so that ``jax.grad``
