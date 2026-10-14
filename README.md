@@ -27,7 +27,7 @@ run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter 
 
 ```sh
 pip install -r requirements.txt     # numpy; qiskit and matplotlib are optional
-python -m unittest discover         # 210 tests; the 24 Qiskit tests skip without qiskit
+python -m unittest discover         # 229 tests; the 24 Qiskit tests skip without qiskit
 ```
 
 ## Conventions
@@ -55,7 +55,7 @@ python -m unittest discover         # 210 tests; the 24 Qiskit tests skip withou
 | `linalg` | inner product, fidelity, unitary/Hermitian checks, `kron` |
 | `gates` | standard gates and rotations, `controlled()`, `fuse()` |
 | `observables` | `PauliSum`: expectation and variance without building the matrix (Z-only terms from probabilities alone), exact diagonalization; `pauli_string`, `z_expectation`, `z_correlation`, `tfim` and its closed-form ground energy |
-| `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy |
+| `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy, entropy across every cut (`entropy_profile`), Page's formula |
 | `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions), `run`, DAG, depth, layers, single-qubit gate fusion |
 | `interop` | `to_qiskit`: export a `Circuit`, with bound or symbolic parameters |
 
@@ -93,9 +93,9 @@ with it:
 | `test_gates.py` | 11 | Algebraic identities (RX(π) = −iX, SX² = X, HZH = X, …), fusion order, controlled gates |
 | `test_standard_gates.py` | 33 | What X, Y, Z, H, S, T, RX, RY, RZ, CNOT and CZ *do*: action on basis states and eigenstates, Pauli algebra, phase-gate powers, rotation laws and Bloch-sphere geometry, CNOT/CZ truth tables, Bell states, phase kickback; state tests run in both precisions |
 | `test_measurement.py` | 27 | Collapse against an independent projection over flat indices; Bell and GHZ correlations; Born-rule frequencies; repeated measurement; norm-drift handling; the rounding-noise cutoff in both precisions; required, reproducible `rng` |
-| `test_observables.py` | 12 | Known physics: Heisenberg singlet at −3, two-site Ising ground energy −√(1+4g²), zero variance in eigenstates |
+| `test_observables.py` | 15 | Known physics: Heisenberg singlet at −3, two-site Ising ground energy −√(1+4g²), zero variance in eigenstates; all 64 three-qubit Pauli strings against Kronecker products; real and complex diagonalization paths |
 | `test_expectation.py` | 20 | `pauli_string` labels; the Z-only fast path against applying gates, in both precisions and with gates disabled; a simulated upstream bug tripping the imaginary-part check; ⟨ZᵢZⱼ⟩ on product, GHZ, ordered and disordered states; the TFIM closed form against exact diagonalization |
-| `test_entanglement.py` | 7 | Bell and GHZ entropies, product states, a brute-force partial trace |
+| `test_entanglement.py` | 23 | Bell and GHZ entropies, product states, a brute-force partial trace; entropy profiles; subadditivity, Araki–Lieb and strong subadditivity on random states; Page's formula against sampled states; area law vs log growth vs volume law on 10-qubit chains; no-cloning via CNOT |
 | `test_precision.py` | 12 | complex64 stays complex64 through every operation and agrees with complex128 to single precision |
 | `test_circuit.py` | 32 | Building and validation; `run` against applying gates by hand; parameter reuse; classical control; teleportation on all four branches; depth and layers worked out by hand; fusion keeps the state and measurement results, merges in the right order, and never crosses a measurement, condition or two-qubit gate |
 | `test_qiskit_parity.py` | 24 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy` |
@@ -150,17 +150,17 @@ gates):
 
 | n | complex64 | complex128 | complex64, renormalized | complex128, renormalized |
 |---|---|---|---|---|
-| 4 | 3.3e-6 | 2.4e-14 | 4.2e-8 | 1.7e-16 |
-| 8 | 2.3e-6 | 4.8e-14 | 4.7e-8 | 1.7e-16 |
-| 12 | 5.2e-6 | 6.4e-14 | 5.4e-8 | 2.3e-16 |
+| 4 | 3.3e-6 | 2.1e-14 | 4.2e-8 | 1.7e-16 |
+| 8 | 2.3e-6 | 5.0e-14 | 4.7e-8 | 1.7e-16 |
+| 12 | 5.2e-6 | 6.5e-14 | 5.4e-8 | 3.5e-16 |
 
 Time per single-qubit gate (median of 15; NumPy 2.5.3, one Windows machine):
 
 | n | complex64 | complex128 | speedup | memory (c64 / c128) |
 |---|---|---|---|---|
-| 20 | 3.7 ms | 6.1 ms | 1.7× | 8 / 16 MiB |
-| 22 | 12.6 ms | 22.0 ms | 1.7× | 32 / 64 MiB |
-| 24 | 42.9 ms | 89.2 ms | 2.1× | 128 / 256 MiB |
+| 20 | 3.8 ms | 6.2 ms | 1.6× | 8 / 16 MiB |
+| 22 | 12.5 ms | 21.1 ms | 1.7× | 32 / 64 MiB |
+| 24 | 43.9 ms | 84.6 ms | 1.9× | 128 / 256 MiB |
 
 **What this shows:**
 
@@ -186,7 +186,7 @@ Time per single-qubit gate (median of 15; NumPy 2.5.3, one Windows machine):
    errors in the state's direction move the energy only at second order.
    Near a variational minimum, which is where VQE ends up, the same holds.
    Far from one it doesn't.
-4. **The speedup is 1.7–2.1×, growing with n** as the state stops fitting
+4. **The speedup is 1.6–2×, growing with n** as the state stops fitting
    in cache. Together with half the memory, that's the gain to set against
    items 1 and 3.
 5. **How the energy is evaluated matters too.** Z-only terms are summed
@@ -201,6 +201,45 @@ Reproduce with `python -m experiments.precision` (about 4 minutes). It
 writes the raw numbers to `experiments/results/precision.json` and both
 figures, and takes `--sizes`, `--depths`, `--seeds` and `--g`.
 
+## Entanglement: area law, critical log law, volume law
+
+[`experiments/entanglement_scaling.py`](experiments/entanglement_scaling.py)
+computes the entanglement entropy S(l) of the first l qubits, for every l,
+in exact ground states of the periodic transverse-field Ising chain
+H = −Σ ZᵢZᵢ₊₁ − h Σ Xᵢ on 12 qubits, and in 20 random states.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/entanglement-scaling-dark.png">
+  <img alt="Left: entanglement entropy against subsystem size. Random states rise to about 5.3 bits at the middle, following Page's formula, while all three ground states stay at or below about 1 bit. Middle: the ground states alone. The disordered phase levels off near 0.26 bits, the ordered phase near 1 bit, and the critical point keeps rising to the middle of the chain. Right: the critical entropy against the conformal coordinate falls on a straight line with fitted slope 0.510." src="experiments/figures/entanglement-scaling-light.png">
+</picture>
+
+| State | S(n/2), bits | What it shows |
+|---|---|---|
+| Random states (mean of 20) | 5.282 | Volume law: Page's formula predicts 5.279 |
+| Ground state, disordered (h = 2) | 0.256 | Area law: levels off after a couple of sites |
+| Ground state, ordered (h = 0.5) | 1.008 | Area law: about 1 bit, because the finite-size ground state is a cat-like superposition of the two ordered states |
+| Ground state, critical (h = 1) | 1.013 | Grows like log l; the fitted central charge is c = 0.510, against ½ for the Ising universality class |
+
+At the critical point, conformal field theory predicts
+S(l) = (c/3) log₂[(n/π) sin(πl/n)] + const for a periodic chain, so S
+against that coordinate is a straight line of slope c (right panel). A fit
+on 12 qubits recovers c to within 2%. The gapped ground states hold at most
+about one bit across any cut, which is why matrix product states can
+represent them with small bond dimension, and why random states, at 5.3
+bits, cannot be.
+
+Reproduce with `python -m experiments.entanglement_scaling` (about 40
+seconds). It prints the seed and environment, writes the raw numbers to
+`experiments/results/entanglement_scaling.json`, and takes `--n`,
+`--samples` and `--seed`.
+
+**A note on `copy()`.** Nothing in this API clones a qubit. `State.copy()`
+exists because the simulator is a classical program holding amplitudes; no
+unitary maps |ψ⟩⊗|0⟩ to |ψ⟩⊗|ψ⟩ for every ψ, because linearity forbids it.
+The tests show the concrete case: CNOT copies |0⟩ and |1⟩ onto a blank qubit,
+so by linearity it must turn |+⟩⊗|0⟩ into a Bell state, which has fidelity ½
+with |+⟩⊗|+⟩.
+
 ## Project layout
 
 ```text
@@ -209,16 +248,17 @@ quantum_simulator/
   linalg.py         inner, fidelity, dagger, unitary/Hermitian checks, kron
   gates.py          gate matrices, controlled(), fuse()
   observables.py    PauliSum, Z fast path, correlations, TFIM, exact diagonalization
-  entanglement.py   Schmidt decomposition, reduced density matrices, entropies
+  entanglement.py   Schmidt decomposition, reduced density matrices, entropies, Page's formula
   circuit.py        Op, Circuit, run, DAG, fusion
   interop.py        to_qiskit
 tests/
   reference.py      naive loop-based implementations used as ground truth
-  test_*.py         210 tests (see above)
+  test_*.py         229 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
-  results/          raw numbers (precision.json)
-  figures/          precision-light.png, precision-dark.png
+  entanglement_scaling.py   area law, critical log law, volume law
+  results/          raw numbers, one JSON per experiment
+  figures/          light and dark PNG per experiment
 requirements.txt
 ```
 
@@ -241,6 +281,10 @@ Done so far:
 8. Observables: a gate-free fast path for Z-only terms, a hard error when a
    Hermitian expectation comes out complex, ⟨ZᵢZⱼ⟩ correlations,
    `pauli_string`, and a shared `tfim` with its closed-form ground energy.
+9. Entanglement diagnostics: entropy across every cut, Page's formula, the
+   area-law experiment with a fitted central charge, and the no-cloning
+   note on `copy()`. Exact diagonalization got about 8× faster along the
+   way (direct Pauli-matrix construction, real arithmetic when possible).
 
 Not covered yet:
 
@@ -252,7 +296,8 @@ Not covered yet:
   treats ops as commuting only when they touch disjoint wires, so it misses
   cases like two diagonal gates on the same qubit.
 - **Exact diagonalization is dense**, so it's capped at 12 qubits by default
-  (`max_qubits` raises the cap). A sparse or Lanczos solver would go further.
+  (`max_qubits` raises the cap); a 12-qubit ground state takes about 10
+  seconds. A sparse or Lanczos solver would go further.
 - **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2 and
   matplotlib 3.11.2 on Windows 11. The minimum versions in
   `requirements.txt` haven't been tested, and there is no CI.

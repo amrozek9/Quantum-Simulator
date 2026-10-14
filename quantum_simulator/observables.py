@@ -24,7 +24,7 @@ from numbers import Number
 import numpy as np
 
 from . import gates
-from .linalg import ATOL, kron
+from .linalg import ATOL
 from .state import State, apply_gate, as_tensor, default_atol, num_qubits, resolve_dtype
 
 PAULIS = {"I": gates.I, "X": gates.X, "Y": gates.Y, "Z": gates.Z}
@@ -137,7 +137,10 @@ class PauliSum:
     ) -> np.ndarray:
         """Dense ``2^n x 2^n`` matrix, little-endian (matches ``SparsePauliOp.to_matrix``).
 
-        Accumulated in complex128 and rounded once to ``dtype``.
+        Accumulated in complex128 and rounded once to ``dtype``. Each Pauli
+        string sends basis state ``k`` to ``k XOR xmask`` times a phase, so
+        its matrix has one nonzero per column and is written directly with
+        ``2^n`` indexed additions, without forming Kronecker products.
         """
         dt = resolve_dtype(dtype)
         if self.n > max_qubits:
@@ -146,8 +149,10 @@ class PauliSum:
                 f"raise max_qubits to force it"
             )
         mat = np.zeros((2**self.n, 2**self.n), dtype=np.complex128)
+        cols = np.arange(2**self.n)
         for label, coeff in self.terms:
-            mat += coeff * kron(*(PAULIS[c] for c in label))
+            rows, phase = _pauli_action(label, cols)
+            mat[rows, cols] += coeff * phase
         return mat.astype(dt, copy=False)
 
     def eigh(
@@ -157,11 +162,19 @@ class PauliSum:
     ) -> tuple[np.ndarray, np.ndarray]:
         """All eigenvalues (ascending) and eigenvectors (columns, flat little-endian).
 
-        ``dtype=np.complex64`` diagonalizes in single precision (LAPACK ``cheevd``).
+        ``dtype=np.complex64`` diagonalizes in single precision. When the
+        matrix is real (real weights, and an even number of Y's in every
+        string, as for the TFIM or Heisenberg models), it is diagonalized as
+        a real symmetric matrix, several times faster, and the eigenvectors
+        are returned in ``dtype``.
         """
         if not self.is_hermitian():
             raise ValueError("eigh requires a Hermitian observable")
-        return np.linalg.eigh(self.to_matrix(max_qubits, dtype))
+        mat = self.to_matrix(max_qubits, dtype)
+        if not np.any(mat.imag):
+            energies, vecs = np.linalg.eigh(mat.real)
+            return energies, vecs.astype(mat.dtype)
+        return np.linalg.eigh(mat)
 
     def ground_state(
         self,
@@ -269,6 +282,23 @@ def tfim_periodic_ground_energy(n: int, J: float = 1.0, h: float = 1.0) -> float
         raise ValueError("this closed form assumes J, h >= 0")
     k = np.pi * (2 * np.arange(n) + 1) / n
     return float(-np.sum(np.sqrt(J**2 + h**2 - 2 * J * h * np.cos(k))))
+
+
+def _pauli_action(label: str, cols: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Where a Pauli string sends each basis state, and with what phase.
+
+    Per qubit: X|b> = |b^1>, Z|b> = (-1)^b |b>, Y|b> = i (-1)^b |b^1>. So the
+    string maps ``|k>`` to ``i^(#Y) (-1)^popcount(k & (zmask | ymask)) |k ^ xmask>``,
+    where ``xmask`` covers the X and Y positions.
+    """
+    n = len(label)
+    bit = {pos: 1 << (n - 1 - pos) for pos in range(n)}  # label[pos] acts on qubit n-1-pos
+    xmask = sum(bit[p] for p, c in enumerate(label) if c in "XY")
+    signmask = sum(bit[p] for p, c in enumerate(label) if c in "YZ")
+    n_y = label.count("Y")
+    # bitwise_count returns uint8: cast before negating, or 1 - 2 wraps to 255.
+    sign = 1 - 2 * (np.bitwise_count(cols & signmask) & 1).astype(np.int64)
+    return cols ^ xmask, (1j**n_y) * sign
 
 
 def _z_mask(label: str) -> int:

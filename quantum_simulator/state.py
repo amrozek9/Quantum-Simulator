@@ -440,6 +440,14 @@ class State:
     # -- misc ---------------------------------------------------------------
 
     def copy(self) -> State:
+        """An independent copy of the amplitudes.
+
+        This is a simulator privilege, not a quantum operation. No unitary
+        maps ``|psi>|0>`` to ``|psi>|psi>`` for every ``|psi>`` (the no-cloning
+        theorem: linearity forbids it), so a circuit cannot do what this
+        method does. It exists because the simulator is a classical program
+        holding amplitudes.
+        """
         return State(self.psi.copy(), check_norm=False)
 
     def astype(self, dtype: np.typing.DTypeLike) -> State:

@@ -5,7 +5,7 @@ import numpy as np
 from quantum_simulator import gates
 from quantum_simulator.entanglement import entanglement_entropy
 from quantum_simulator.linalg import is_hermitian, kron
-from quantum_simulator.observables import PauliSum, pauli, tfim
+from quantum_simulator.observables import PAULIS, PauliSum, pauli, tfim
 from quantum_simulator.state import State
 from tests.reference import random_state
 
@@ -88,6 +88,36 @@ class TestExactDiagonalization(unittest.TestCase):
     def test_non_hermitian_rejected(self):
         with self.assertRaises(ValueError):
             pauli("X", 1j).ground_state()
+
+
+class TestDenseMatrix(unittest.TestCase):
+    """to_matrix writes each Pauli string directly; eigh uses real arithmetic when it can."""
+
+    def test_every_string_matches_kron(self):
+        # All 4^3 three-qubit strings, with a complex weight, against Kronecker products.
+        from itertools import product
+
+        for letters in product("IXYZ", repeat=3):
+            label = "".join(letters)
+            with self.subTest(label=label):
+                expected = (0.3 - 0.7j) * kron(*(PAULIS[c] for c in label))
+                np.testing.assert_array_equal(pauli(label, 0.3 - 0.7j).to_matrix(), expected)
+
+    def test_real_and_complex_eigh_paths_agree_with_numpy(self):
+        real_h = tfim(6, h=0.8, periodic=True) + PauliSum([("YYIIII", 0.4)])  # two Y's: real
+        complex_h = real_h + PauliSum([("XYIIZI", 0.3)])                      # one Y: complex
+        for h, is_real in [(real_h, True), (complex_h, False)]:
+            mat = h.to_matrix()
+            self.assertEqual(not np.any(mat.imag), is_real)
+            energies, vecs = h.eigh()
+            np.testing.assert_allclose(energies, np.linalg.eigh(mat)[0], atol=1e-10)
+            self.assertEqual(vecs.dtype, np.complex128)
+            # Columns are eigenvectors: H v = E v.
+            np.testing.assert_allclose(mat @ vecs[:, :5], vecs[:, :5] * energies[:5], atol=1e-10)
+
+    def test_real_path_respects_precision(self):
+        energies, vecs = tfim(4, h=1.0).eigh(dtype=np.complex64)
+        self.assertEqual((energies.dtype, vecs.dtype), (np.float32, np.complex64))
 
 
 if __name__ == "__main__":
