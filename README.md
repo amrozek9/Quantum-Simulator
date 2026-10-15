@@ -1,9 +1,83 @@
 # Quantum-Simulator
 
-A NumPy state-vector simulator for research. An n-qubit state is a `(2,)*n`
-complex tensor, so every gate is a `tensordot` on its target axes and the
-2ⁿ × 2ⁿ operator is never built. Gates, states, observables and partial
-traces match Qiskit exactly, and a parity test suite checks this.
+A state-vector simulator for research, in NumPy with a differentiable JAX
+backend. An n-qubit state is a `(2,)*n` complex tensor, so every gate is a
+`tensordot` on its target axes and the 2ⁿ × 2ⁿ operator is never built.
+Gates, states, observables and partial traces match Qiskit exactly, which
+thousands of random circuits check.
+
+## Results
+
+### Barren plateaus come from the entangler's Lie algebra, not the circuit's depth
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/barren-plateaus-dark.png">
+  <img alt="Left: gradient variance against qubit count, log scale. With a CX ladder it falls as 2 to the minus 1.04 n, from 0.23 at 2 qubits to 1.8e-4 at 12. With a CZ ladder it falls only as n to the minus 1.5, to 0.016 at 12 qubits. Right: dynamical Lie algebra dimension; CX points follow 2^(n-1)(2^n - 1), CZ points follow n(n+1)." src="experiments/figures/barren-plateaus-light.png">
+</picture>
+
+Two layered RY ansätze that differ in a single gate behave in opposite
+ways. With a CX ladder, the gradient variance at random parameters falls
+as 2^(−1.04 n), a barren plateau. With a CZ ladder it falls only as
+n^(−1.50). The reason is the ansatz's dynamical Lie algebra, the set of
+transformations its parameters can generate. Computed exactly, it is all of
+so(2ⁿ) for CX (dimension 6, 28, 120, 496 for n = 2 to 5) but only n(n+1)
+for CZ (6, 12, 20, 30, 42, 56 for n = 2 to 7). This matches the theory
+relating gradient variance to that algebra's size (Larocca et al., Quantum
+2022; Ragone et al., Nat. Commun. 2024). The price of trainability is
+expressiveness: the CZ ansatz cannot reach generic states at any depth
+(next result). [`experiments/barren_plateaus.py`](experiments/barren_plateaus.py)
+regenerates the figure in about 3 minutes.
+
+### VQE reaches the exact ground state, or a ceiling the Lie algebra predicts
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/vqe-convergence-dark.png">
+  <img alt="VQE energy error against ansatz depth on the critical 8-qubit Ising chain, log scale. The RY + CX ansatz falls from 0.1 at 1 layer to 1.6e-4 at 12, crossing the 1.6e-3 threshold at 6 layers. The RY + CZ ansatz plateaus at 0.101 from 4 layers on." src="experiments/figures/vqe-convergence-light.png">
+</picture>
+
+On the critical (h = J) open Ising chain of 8 qubits, VQE with the CX
+ansatz gets below 1.6×10⁻³ (chemical accuracy's 1.6 mHa carried over to
+this model's energy scale) at 6 layers. It reaches 1.6×10⁻⁴ and fidelity
+0.99998 with the exact ground state at 12 layers. The best of 16 restarts
+does not improve at every single depth (5, 7 and 9 layers come out worse
+than the depth before), which is ordinary non-convex optimization showing
+through. The CZ ansatz stops at error 0.101 (fidelity 0.882) from 4 layers
+on and never improves, as its small Lie algebra predicts.
+[`experiments/vqe_convergence.py`](experiments/vqe_convergence.py), about
+8 minutes.
+
+### The phase transition, and why a finite chain hides its entropy peak
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/phase-transition-dark.png">
+  <img alt="Left: half-chain entanglement entropy against transverse field on a 10-qubit chain. The exact ground state sits at 1 bit throughout the ordered phase and then falls. With a small symmetry-breaking field the entropy rises from 0 to a peak of 0.50 bits at h = 0.95 and falls. VQE points follow the symmetry-broken curve. Right: correlation between sites 1 and 8 falls from 1 to 0 across h = 1; VQE points follow it, dipping slightly below at h = 1." src="experiments/figures/phase-transition-light.png">
+</picture>
+
+Sweeping the field h across the transition on 10 qubits, the correlation
+⟨Z₁Z₈⟩ melts from 1 to 0 around h = 1. The half-chain entropy peaks at the
+critical point (h = 0.95 on this finite chain), but only once a tiny
+symmetry-breaking field (ε = 0.01) is added. Without it, the finite chain's
+exact ground state in the ordered phase is a superposition of the two
+ordered states, worth one extra bit everywhere below h = 1. That bit hides
+the peak entirely: the exact curve's maximum sits at h = 0.45. VQE,
+minimizing the plain Hamiltonian, finds the symmetry-broken states on its
+own and tracks that curve. Its errors are largest next to the transition
+(2–3×10⁻² at h = 0.75 and 1.0, against 6×10⁻⁴ to 4×10⁻³ elsewhere).
+[`experiments/phase_transition.py`](experiments/phase_transition.py), about
+8 minutes.
+
+### Why these numbers can be trusted
+
+Every gate, state, observable and partial trace is checked against Qiskit
+exactly, including global phases. Hypothesis-generated random circuits
+(about 12,000 in one thorough run) are checked against Qiskit and against a
+naive full-matrix simulator that shares no code with this one. JAX autodiff
+agrees with parameter-shift gradients computed on the NumPy simulator to
+about 1e-16, and the fast VQE path agrees with the generic simulator to
+1e-12. Bugs were planted in each module to confirm the tests catch them.
+Details are in [How correctness is checked](#how-correctness-is-checked).
+
+## Usage
 
 ```python
 import numpy as np
@@ -27,7 +101,7 @@ run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter 
 
 ```sh
 pip install -r requirements.txt     # numpy; qiskit, jax, hypothesis and matplotlib are optional
-python -m unittest discover         # 280 tests in about 30 s; tests needing a missing optional package skip
+python -m unittest discover         # 295 tests in under a minute; tests needing a missing optional package skip
 HYPOTHESIS_PROFILE=thorough python -m unittest tests.test_properties   # 2000 random circuits per property
 ```
 
@@ -59,6 +133,7 @@ HYPOTHESIS_PROFILE=thorough python -m unittest tests.test_properties   # 2000 ra
 | `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy, entropy across every cut (`entropy_profile`), Page's formula |
 | `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions, multi-controlled `mcx`/`mcz`), `run`, DAG, depth, layers, single-qubit gate fusion, `inverse`, `compose` |
 | `algorithms` | Bell pair, GHZ, teleportation, Bernstein–Vazirani, Grover, QFT, phase estimation, as circuits |
+| `vqe` | Layered RY ansatz with a CX or CZ ladder; a fast compiled path (`lax.scan` over layers, real amplitudes, the ladder as one permutation or phase vector), several observables per compilation; Adam; `vqe` with batched restarts; exact dynamical-Lie-algebra dimension |
 | `interop` | `to_qiskit`: export a `Circuit`, with bound or symbolic parameters |
 | `jax_backend` | The same simulator as pure JAX functions: `make_state`, `make_energy`, `make_value_and_grad` (compiled, differentiable). Optional; importing it enables JAX's 64-bit mode |
 | `gradients` | Exact gradients by the parameter-shift rule on the NumPy simulator: two terms for RX/RY/RZ/RXX/RYY/RZZ/P/CP, four terms for CRX/CRY/CRZ; also finite differences |
@@ -106,6 +181,7 @@ with it:
 | `test_qiskit_parity.py` | 27 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy`, QFT against `QFTGate`, the algorithm circuits, multi-controlled gates |
 | `test_properties.py` | 7 | Hypothesis-generated circuits (every gate kind, up to 6 qubits and 30 ops) against Qiskit and against a naive full-matrix simulator; norm, fusion, inverse and scheduling invariants; a planted bug shrunk to a minimal circuit |
 | `test_algorithms.py` | 23 | Each algorithm's defining property (below), plus `mcx`, `mcz`, `inverse` and `compose` |
+| `test_vqe.py` | 15 | The fast ansatz path against the NumPy simulator and the generic JAX backend (both entanglers, Pauli strings with Y's, both precisions); its gradient against parameter shifts; Adam against its formula; VQE reaching exact energies; the CZ ceiling not moving with depth; DLA dimensions n(n+1) and so(2ⁿ) |
 
 **Property-based testing.** [`tests/test_properties.py`](tests/test_properties.py)
 uses [Hypothesis](https://hypothesis.readthedocs.io) to generate random
@@ -369,15 +445,20 @@ quantum_simulator/
   jax_backend.py    the simulator in JAX: compiled, differentiable energies
   gradients.py      parameter-shift and finite-difference gradients
   algorithms.py     Bell, GHZ, teleportation, Bernstein-Vazirani, Grover, QFT, phase estimation
+  vqe.py            layered ansatz, fast compiled expectations, Adam, VQE, Lie-algebra dimension
 tests/
   reference.py      naive loop-based implementations used as ground truth
   strategies.py     Hypothesis strategies for random circuits, and test profiles
-  test_*.py         280 tests (see above)
+  test_*.py         295 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   entanglement_scaling.py   area law, critical log law, volume law
   gradient_cost.py  autodiff vs parameter shift, time per gradient
   grover.py         Grover success probability against iterations
+  barren_plateaus.py  gradient variance and Lie-algebra dimension against qubit count
+  vqe_convergence.py  VQE energy error against ansatz depth
+  phase_transition.py entanglement and correlations across the Ising transition
+  style.py          shared figure palette and axis styling
   results/          raw numbers, one JSON per experiment
   figures/          light and dark PNG per experiment
 requirements.txt
@@ -415,6 +496,10 @@ Done so far:
     algorithms as tests (Bell, GHZ, teleportation, Bernstein–Vazirani,
     Grover, QFT, phase estimation), with multi-controlled gates,
     `Circuit.inverse` and `Circuit.compose` to build them.
+12. Variational ground states of the Ising chain: VQE against exact
+    diagonalization, the phase-transition sweep, and barren plateaus traced
+    to the ansatz's dynamical Lie algebra, with a compiled ansatz path whose
+    compile time doesn't grow with depth.
 
 Not covered yet:
 
@@ -428,11 +513,16 @@ Not covered yet:
 - **Exact diagonalization is dense**, so it's capped at 12 qubits by default
   (`max_qubits` raises the cap); a 12-qubit ground state takes about 10
   seconds. A sparse or Lanczos solver would go further.
-- **JAX compilation time grows with circuit length**, because the gate loop
-  is unrolled at trace time (31 s at 192 parameters). Expressing repeated
-  layers with `jax.lax.scan` would make it roughly constant. The JAX backend
-  differentiates unitary circuits only, with no measurement or classical
-  control.
+- **Generic JAX compilation time grows with circuit length**, because the
+  gate loop is unrolled at trace time (31 s at 192 parameters). The layered
+  VQE ansatz avoids this with `jax.lax.scan` and a structure-specific fast
+  path, compiling in about 0.3 s at any depth; other circuit shapes don't
+  get that yet. The JAX backend differentiates unitary circuits only, with
+  no measurement or classical control.
+- **VQE uses one ansatz family** (layered RY with a CX or CZ ladder) and
+  plain Adam with random restarts. Near the transition on 10 qubits it is
+  2–3×10⁻² from the exact energy at 8 layers; deeper circuits, more
+  restarts or problem-inspired ansätze would do better there.
 - **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2,
   JAX 0.11.2 (CPU), Hypothesis 6.169.1 and matplotlib 3.11.2 on Windows 11. The minimum versions in
   `requirements.txt` haven't been tested, and there is no CI.

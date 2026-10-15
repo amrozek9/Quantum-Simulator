@@ -1,0 +1,208 @@
+{
+ "n": 8,
+ "h": 1.0,
+ "E0": -9.837951447459417,
+ "depths": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12
+ ],
+ "threshold": 0.0016,
+ "runs": {
+  "cx": [
+   {
+    "layers": 1,
+    "n_params": 16,
+    "best_error": 0.10375027163207662,
+    "median_error": 0.10375027202476783,
+    "fidelity": 0.9541793922388642
+   },
+   {
+    "layers": 2,
+    "n_params": 24,
+    "best_error": 0.013860464107938952,
+    "median_error": 0.01654379088348623,
+    "fidelity": 0.9945225798787549
+   },
+   {
+    "layers": 3,
+    "n_params": 32,
+    "best_error": 0.011391555633490924,
+    "median_error": 0.01352555571413383,
+    "fidelity": 0.9960318044742912
+   },
+   {
+    "layers": 4,
+    "n_params": 40,
+    "best_error": 0.0023891304216032694,
+    "median_error": 0.014003597976683935,
+    "fidelity": 0.9994689604295856
+   },
+   {
+    "layers": 5,
+    "n_params": 48,
+    "best_error": 0.0027770424071462685,
+    "median_error": 0.014014117549794314,
+    "fidelity": 0.9994667486065126
+   },
+   {
+    "layers": 6,
+    "n_params": 56,
+    "best_error": 0.0009419188760446673,
+    "median_error": 0.007851089030411984,
+    "fidelity": 0.9998226761869524
+   },
+   {
+    "layers": 7,
+    "n_params": 64,
+    "best_error": 0.0016910291055651783,
+    "median_error": 0.007764664331818771,
+    "fidelity": 0.9995451173754845
+   },
+   {
+    "layers": 8,
+    "n_params": 72,
+    "best_error": 0.0007874491306303355,
+    "median_error": 0.004935958159176579,
+    "fidelity": 0.9998837153436854
+   },
+   {
+    "layers": 9,
+    "n_params": 80,
+    "best_error": 0.0012610235826944205,
+    "median_error": 0.005083949382940212,
+    "fidelity": 0.9996662144720935
+   },
+   {
+    "layers": 10,
+    "n_params": 88,
+    "best_error": 0.0006159412396797848,
+    "median_error": 0.004328384415059894,
+    "fidelity": 0.9998821145692294
+   },
+   {
+    "layers": 11,
+    "n_params": 96,
+    "best_error": 0.00020113056558557219,
+    "median_error": 0.0025942760183612634,
+    "fidelity": 0.9999758976274801
+   },
+   {
+    "layers": 12,
+    "n_params": 104,
+    "best_error": 0.00015814118399859467,
+    "median_error": 0.0018606263877654072,
+    "fidelity": 0.9999797156571758
+   }
+  ],
+  "cz": [
+   {
+    "layers": 1,
+    "n_params": 16,
+    "best_error": 0.23079984281173438,
+    "median_error": 0.2307998428118081,
+    "fidelity": 0.5399325701514985
+   },
+   {
+    "layers": 2,
+    "n_params": 24,
+    "best_error": 0.14422383372845715,
+    "median_error": 0.1462153918161384,
+    "fidelity": 0.6834632109377965
+   },
+   {
+    "layers": 3,
+    "n_params": 32,
+    "best_error": 0.11127699166986282,
+    "median_error": 0.12061546797642908,
+    "fidelity": 0.8233370697580137
+   },
+   {
+    "layers": 4,
+    "n_params": 40,
+    "best_error": 0.10093104179610002,
+    "median_error": 0.10093438966096624,
+    "fidelity": 0.8823138502709338
+   },
+   {
+    "layers": 5,
+    "n_params": 48,
+    "best_error": 0.100930848679198,
+    "median_error": 0.10093228797009068,
+    "fidelity": 0.8823127632973004
+   },
+   {
+    "layers": 6,
+    "n_params": 56,
+    "best_error": 0.10093090000839666,
+    "median_error": 0.1009332080850438,
+    "fidelity": 0.8823142486781537
+   },
+   {
+    "layers": 7,
+    "n_params": 64,
+    "best_error": 0.10093092207910814,
+    "median_error": 0.10093357946715642,
+    "fidelity": 0.8822977230485436
+   },
+   {
+    "layers": 8,
+    "n_params": 72,
+    "best_error": 0.1009308409381493,
+    "median_error": 0.10093308800739909,
+    "fidelity": 0.8823132305108508
+   },
+   {
+    "layers": 9,
+    "n_params": 80,
+    "best_error": 0.10093084015259102,
+    "median_error": 0.10093100478700023,
+    "fidelity": 0.8823134972016867
+   },
+   {
+    "layers": 10,
+    "n_params": 88,
+    "best_error": 0.10093084015258924,
+    "median_error": 0.10093111857851422,
+    "fidelity": 0.8823134972112342
+   },
+   {
+    "layers": 11,
+    "n_params": 96,
+    "best_error": 0.1009308401525928,
+    "median_error": 0.10093529769258147,
+    "fidelity": 0.88231349720312
+   },
+   {
+    "layers": 12,
+    "n_params": 104,
+    "best_error": 0.10093084015258924,
+    "median_error": 0.10093093466761349,
+    "fidelity": 0.8823134972031444
+   }
+  ]
+ },
+ "first_depth_below_threshold": {
+  "cx": 6,
+  "cz": null
+ },
+ "meta": {
+  "seed": 0,
+  "steps": 3000,
+  "restarts": 16,
+  "lr": 0.02,
+  "numpy": "2.5.3",
+  "jax": "0.11.2",
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26300-SP0"
+ }
+}
