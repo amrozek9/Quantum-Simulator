@@ -18,7 +18,7 @@ from quantum_simulator.backends.density import (
     run_trajectories,
 )
 from quantum_simulator.backends.mps import MPS, run_mps
-from quantum_simulator.backends.stabilizer import StabilizerState, run_stabilizer
+from quantum_simulator.backends.stabilizer import run_stabilizer
 from quantum_simulator.circuit import Circuit, run
 from quantum_simulator.entanglement import entanglement_entropy
 from quantum_simulator.observables import PauliSum, tfim

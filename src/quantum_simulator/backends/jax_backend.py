@@ -36,7 +36,6 @@ from ..state import resolve_dtype  # noqa: E402
 
 # -- gates as differentiable functions of their angle -----------------------------
 
-_I2 = jnp.eye(2)
 _X, _Y, _Z = (jnp.asarray(PAULIS[c]) for c in "XYZ")
 _P0 = jnp.array([[1, 0], [0, 0]])
 _P1 = jnp.array([[0, 0], [0, 1]])

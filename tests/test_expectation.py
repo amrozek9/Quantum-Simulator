@@ -7,6 +7,7 @@ from unittest import mock
 
 import numpy as np
 
+from quantum_simulator import algorithms as alg
 from quantum_simulator import gates, observables
 from quantum_simulator.circuit import Circuit, run
 from quantum_simulator.observables import (
@@ -33,13 +34,6 @@ def product_state(angles) -> State:
     c = Circuit(len(angles))
     for q, a in enumerate(angles):
         c.ry(q, a)
-    return run(c).state
-
-
-def ghz(n: int) -> State:
-    c = Circuit(n).h(0)
-    for q in range(1, n):
-        c.cx(0, q)
     return run(c).state
 
 
@@ -151,7 +145,7 @@ class TestZCorrelation(unittest.TestCase):
                     self.assertAlmostEqual(z_correlation(s, i, j, connected=True), 0.0, places=12)
 
     def test_ghz_is_correlated_at_every_distance(self):
-        s = ghz(5)
+        s = run(alg.ghz(5)).state
         for j in range(1, 5):
             self.assertAlmostEqual(z_correlation(s, 0, j), 1.0, places=12)
             self.assertAlmostEqual(z_correlation(s, 0, j, connected=True), 1.0, places=12)

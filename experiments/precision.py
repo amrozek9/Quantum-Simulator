@@ -28,6 +28,8 @@ from pathlib import Path
 
 import numpy as np
 
+from experiments.style import THEMES, setup, style_axes
+
 from quantum_simulator import gates
 from quantum_simulator.observables import tfim, tfim_periodic_ground_energy
 from quantum_simulator.state import State
@@ -123,46 +125,25 @@ def fit_slope(depths: list[int], rel: list[list[float]], min_depth: int) -> floa
 
 # -- figure -----------------------------------------------------------------------
 
-# Categorical slots 1 and 2 of the reference palette, stepped per mode.
-THEMES = {
-    "light": {"surface": "#fcfcfb", "text": "#0b0b0b", "muted": "#52514e", "grid": "#e4e3df",
-              "complex128": "#2a78d6", "complex64": "#eb6834"},
-    "dark": {"surface": "#1a1a19", "text": "#ffffff", "muted": "#c3c2b7", "grid": "#3a3a37",
-             "complex128": "#3987e5", "complex64": "#d95926"},
-}
-
-
 def plot(results: list[dict], path: Path, theme: str) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    c = THEMES[theme]
-    plt.rcParams.update({
-        "font.size": 10, "text.color": c["text"], "axes.labelcolor": c["muted"],
-        "xtick.color": c["muted"], "ytick.color": c["muted"], "axes.edgecolor": c["grid"],
-    })
+    plt, c = setup(theme)
+    colors = {"complex128": c["slots"][0], "complex64": c["slots"][1]}
     fig, axes = plt.subplots(1, len(results), figsize=(3.4 * len(results), 3.6), sharey=True)
     fig.patch.set_facecolor(c["surface"])
     for ax, res in zip(np.atleast_1d(axes), results):
-        ax.set_facecolor(c["surface"])
+        style_axes(ax, c)
         d = np.asarray(res["depths"])
         keep = d > 0
         for name in ["complex128", "complex64"]:
             rel = np.asarray(res["rel_error"][name])[:, keep]
             rel = np.where(rel > 0, rel, np.nan)  # an exact zero has no place on a log axis
-            ax.fill_between(d[keep], np.nanmin(rel, 0), np.nanmax(rel, 0), color=c[name], alpha=0.18, lw=0)
-            ax.plot(d[keep], np.nanmedian(rel, 0), color=c[name], lw=2, label=name, solid_capstyle="round")
+            ax.fill_between(d[keep], np.nanmin(rel, 0), np.nanmax(rel, 0), color=colors[name], alpha=0.18, lw=0)
+            ax.plot(d[keep], np.nanmedian(rel, 0), color=colors[name], lw=2, label=name, solid_capstyle="round")
         for name, eps in EPS.items():
             ax.axhline(eps, color=c["muted"], lw=0.8, ls=(0, (2, 3)))
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_title(f"n = {res['n']} qubits", color=c["text"], fontsize=10, loc="left")
-        ax.grid(True, which="major", color=c["grid"], lw=0.6)
-        ax.set_axisbelow(True)
-        for side in ["top", "right"]:
-            ax.spines[side].set_visible(False)
         ax.set_xlabel("Echo depth (ansatz layers)")
     first, last = np.atleast_1d(axes)[0], np.atleast_1d(axes)[-1]
     first.set_ylabel("Relative energy error  |E − E₀| / |E₀|")

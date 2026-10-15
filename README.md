@@ -267,15 +267,22 @@ phase on the wrong state. Each one made between 5 and 13 tests in
 only by a global phase, which no measurement can see, so only the
 matrix-level tests catch that one.
 
-The tests have caught two real bugs so far:
+The checks have caught real bugs along the way:
 
 - A `State` built from an eigenvector column kept that column's strided
   memory layout, so `.vector` returned an array Qiskit's native code
-  rejects. `State` now stores a contiguous copy.
+  rejects (caught by the Qiskit tests). `State` now stores a contiguous copy.
 - Combining a complex64 state with a complex128 one promoted the result to
   complex128 and then checked its norm at complex128 tolerance, which the
-  complex64 factor's rounding error fails. The check now uses the looser
-  of the two tolerances.
+  complex64 factor's rounding error fails (caught by the precision tests).
+  The check now uses the looser of the two tolerances.
+- `np.bitwise_count` returns unsigned 8-bit integers, so the first version
+  of the direct Pauli-matrix builder computed a sign of −1 as 255 (caught by
+  comparing against Kronecker products; a test now covers all 64
+  three-qubit Pauli strings).
+- Given a plain Python list of parameters, the JAX gradient came back as a
+  list of scalars rather than an array (caught by running the README
+  example; a test now covers list input).
 
 ## What complex64 costs
 

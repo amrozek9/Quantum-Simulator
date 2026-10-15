@@ -30,6 +30,8 @@ from pathlib import Path
 
 import numpy as np
 
+from experiments.style import THEMES, setup, style_axes
+
 from quantum_simulator.entanglement import entropy_profile, page_entropy
 from quantum_simulator.observables import tfim
 from quantum_simulator.state import State
@@ -83,45 +85,26 @@ def _haar_vector(n: int, rng: np.random.Generator) -> np.ndarray:
 
 # -- figure -----------------------------------------------------------------------
 
-# Categorical slots 1-4 of the reference palette, stepped per mode, assigned per entity.
-THEMES = {
-    "light": {"surface": "#fcfcfb", "text": "#0b0b0b", "muted": "#52514e", "grid": "#e4e3df",
-              "critical": "#2a78d6", "ordered": "#eb6834", "disordered": "#1baf7a", "random": "#eda100"},
-    "dark": {"surface": "#1a1a19", "text": "#ffffff", "muted": "#c3c2b7", "grid": "#3a3a37",
-             "critical": "#3987e5", "ordered": "#d95926", "disordered": "#199e70", "random": "#c98500"},
-}
 LABELS = {"critical": "critical, h = 1", "ordered": "ordered, h = 0.5",
           "disordered": "disordered, h = 2", "random": "random states"}
 
 
 def plot(res: dict, path: Path, theme: str) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    c = THEMES[theme]
-    plt.rcParams.update({
-        "font.size": 10, "text.color": c["text"], "axes.labelcolor": c["muted"],
-        "xtick.color": c["muted"], "ytick.color": c["muted"], "axes.edgecolor": c["grid"],
-    })
+    plt, c = setup(theme)
+    colors = {"critical": c["slots"][0], "ordered": c["slots"][1], "disordered": c["slots"][2], "random": c["slots"][3]}
     n = res["n"]
     l = np.asarray(res["l"])
     fig, (left, mid, right) = plt.subplots(1, 3, figsize=(15, 4.2), gridspec_kw={"width_ratios": [1.2, 1.2, 1]})
     fig.patch.set_facecolor(c["surface"])
     for ax in (left, mid, right):
-        ax.set_facecolor(c["surface"])
-        ax.grid(True, color=c["grid"], lw=0.6)
-        ax.set_axisbelow(True)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
+        style_axes(ax, c)
 
     # Left: S(l) for every state, with Page's formula behind the random-state points.
     left.plot(l, res["random"]["page"], color=c["muted"], lw=1, ls=(0, (3, 3)), zorder=1)
-    left.plot(l, res["random"]["mean"], "o", color=c["random"], ms=6, mec=c["surface"], mew=1.5,
+    left.plot(l, res["random"]["mean"], "o", color=colors["random"], ms=6, mec=c["surface"], mew=1.5,
               label=LABELS["random"], zorder=3)
     for name in ("critical", "ordered", "disordered"):
-        left.plot(l, res["ground"][name]["entropy"], "-o", color=c[name], lw=2, ms=5,
+        left.plot(l, res["ground"][name]["entropy"], "-o", color=colors[name], lw=2, ms=5,
                   mec=c["surface"], mew=1.5, label=LABELS[name], zorder=2)
     left.set_xlabel("Subsystem size l (qubits 0 .. l−1)")
     left.set_ylabel("Entanglement entropy S(l), bits")
@@ -134,7 +117,7 @@ def plot(res: dict, path: Path, theme: str) -> None:
 
     # Middle: the same ground states on their own scale, where the regimes separate.
     for name in ("critical", "ordered", "disordered"):
-        mid.plot(l, res["ground"][name]["entropy"], "-o", color=c[name], lw=2, ms=5,
+        mid.plot(l, res["ground"][name]["entropy"], "-o", color=colors[name], lw=2, ms=5,
                  mec=c["surface"], mew=1.5, zorder=2)
     for name, (x, dy) in {"ordered": (3, 9), "critical": (3, -16), "disordered": (3, 9)}.items():
         mid.annotate(LABELS[name], (x, res["ground"][name]["entropy"][x]), xytext=(4, dy),
@@ -151,7 +134,7 @@ def plot(res: dict, path: Path, theme: str) -> None:
     s = np.asarray(res["ground"]["critical"]["entropy"])[1:n]
     xs = np.linspace(x.min(), x.max(), 50)
     right.plot(xs, fit["c"] * xs + fit["intercept"], color=c["muted"], lw=1, ls=(0, (3, 3)), zorder=1)
-    right.plot(x, s, "o", color=c["critical"], ms=7, mec=c["surface"], mew=1.5, zorder=2)
+    right.plot(x, s, "o", color=colors["critical"], ms=7, mec=c["surface"], mew=1.5, zorder=2)
     right.set_xlabel("(1/3) log₂[(n/π) sin(πl/n)]")
     right.set_ylabel("S(l) at h = 1, bits")
     right.set_title("Critical point: slope is the central charge", loc="left", color=c["text"], fontsize=10)

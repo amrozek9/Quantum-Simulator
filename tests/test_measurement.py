@@ -9,7 +9,9 @@ from collections import Counter
 
 import numpy as np
 
+from quantum_simulator import algorithms as alg
 from quantum_simulator import gates
+from quantum_simulator.circuit import run
 from quantum_simulator.state import ZERO_BRANCH_TOL, State
 from tests.reference import random_state
 
@@ -32,13 +34,6 @@ def projected(vec: np.ndarray, qubit: int, outcome: int) -> np.ndarray:
     keep = ((np.arange(vec.size) >> qubit) & 1) == outcome
     out = np.where(keep, vec, 0)
     return out / np.linalg.norm(out)
-
-
-def ghz(n: int) -> State:
-    s = State.zero(n).apply(gates.H, [0])
-    for q in range(1, n):
-        s.apply(gates.CX, [0, q])
-    return s
 
 
 class TestProbOne(unittest.TestCase):
@@ -97,7 +92,7 @@ class TestMeasure(unittest.TestCase):
     def test_ghz_one_measurement_fixes_all(self):
         rng = np.random.default_rng(4)
         for q in range(4):
-            s = ghz(4)
+            s = run(alg.ghz(4)).state
             a = s.measure(q, rng)
             self.assertEqual([s.measure(other, rng) for other in range(4)], [a] * 4)
 

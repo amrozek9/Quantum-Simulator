@@ -20,15 +20,15 @@ from functools import reduce
 
 import numpy as np
 
-from .linalg import dagger, is_unitary, kron
-from .state import DTYPE, apply_gate
+from .linalg import kron
+from .state import DTYPE
 
 __all__ = [
     "I", "X", "Y", "Z", "H", "S", "SDG", "T", "TDG", "SX",
     "CX", "CNOT", "CY", "CZ", "CH", "SWAP", "ISWAP",
     "rx", "ry", "rz", "phase", "u",
     "crx", "cry", "crz", "cphase", "rxx", "ryy", "rzz",
-    "controlled", "fuse", "apply_gate", "dagger", "is_unitary",
+    "controlled", "fuse",
 ]
 
 

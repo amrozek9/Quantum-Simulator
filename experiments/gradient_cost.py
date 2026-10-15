@@ -27,6 +27,8 @@ from pathlib import Path
 
 import numpy as np
 
+from experiments.style import THEMES, setup, style_axes
+
 from quantum_simulator.circuit import Circuit
 from quantum_simulator.gradients import parameter_shift_gradient
 from quantum_simulator.observables import tfim
@@ -105,37 +107,19 @@ def measure(n: int, layers_list: list[int], seed: int, repeats: int) -> list[dic
 
 # -- figure -----------------------------------------------------------------------
 
-THEMES = {
-    "light": {"surface": "#fcfcfb", "text": "#0b0b0b", "muted": "#52514e", "grid": "#e4e3df",
-              "autodiff": "#2a78d6", "jax_shift": "#eb6834", "numpy_shift": "#1baf7a"},
-    "dark": {"surface": "#1a1a19", "text": "#ffffff", "muted": "#c3c2b7", "grid": "#3a3a37",
-             "autodiff": "#3987e5", "jax_shift": "#d95926", "numpy_shift": "#199e70"},
-}
 LABELS = {"autodiff": "JAX autodiff", "jax_shift": "parameter shift, JAX energy",
           "numpy_shift": "parameter shift, NumPy simulator"}
 
 
 def plot(res: dict, path: Path, theme: str) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    c = THEMES[theme]
-    plt.rcParams.update({
-        "font.size": 10, "text.color": c["text"], "axes.labelcolor": c["muted"],
-        "xtick.color": c["muted"], "ytick.color": c["muted"], "axes.edgecolor": c["grid"],
-    })
+    plt, c = setup(theme)
+    colors = {"autodiff": c["slots"][0], "jax_shift": c["slots"][1], "numpy_shift": c["slots"][2]}
     rows = res["rows"]
     p = np.array([r["n_params"] for r in rows])
     fig, (left, right) = plt.subplots(1, 2, figsize=(11, 4.0))
     fig.patch.set_facecolor(c["surface"])
     for ax in (left, right):
-        ax.set_facecolor(c["surface"])
-        ax.grid(True, which="major", color=c["grid"], lw=0.6)
-        ax.set_axisbelow(True)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
+        style_axes(ax, c)
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xticks(p)
@@ -146,7 +130,7 @@ def plot(res: dict, path: Path, theme: str) -> None:
     # Left: wall-clock time per gradient.
     for key in ("numpy_shift", "jax_shift", "autodiff"):
         t = np.array([r[f"{key}_s"] for r in rows])
-        left.plot(p, t, "-o", color=c[key], lw=2, ms=6, mec=c["surface"], mew=1.5, label=LABELS[key])
+        left.plot(p, t, "-o", color=colors[key], lw=2, ms=6, mec=c["surface"], mew=1.5, label=LABELS[key])
     left.set_ylabel("Seconds per gradient")
     left.set_title(f"Time per gradient, {res['n']} qubits", loc="left", color=c["text"], fontsize=10)
     left.legend(frameon=False, loc="upper left", labelcolor=c["text"], fontsize=9)
@@ -160,9 +144,9 @@ def plot(res: dict, path: Path, theme: str) -> None:
     right.plot(p, 2 * p, color=c["muted"], lw=1, ls=(0, (3, 3)))
     right.annotate("2 × parameters", (p[2], 2 * p[2]), xytext=(4, -14), textcoords="offset points",
                    color=c["muted"], fontsize=8)
-    right.plot(p, shift_units, "-o", color=c["jax_shift"], lw=2, ms=6, mec=c["surface"], mew=1.5,
+    right.plot(p, shift_units, "-o", color=colors["jax_shift"], lw=2, ms=6, mec=c["surface"], mew=1.5,
                label=LABELS["jax_shift"])
-    right.plot(p, ad_units, "-o", color=c["autodiff"], lw=2, ms=6, mec=c["surface"], mew=1.5,
+    right.plot(p, ad_units, "-o", color=colors["autodiff"], lw=2, ms=6, mec=c["surface"], mew=1.5,
                label=LABELS["autodiff"])
     right.legend(frameon=False, loc="center right", labelcolor=c["text"], fontsize=9)
     ticks = [1, 2, 5, 10, 20, 50, 100, 200, 500]

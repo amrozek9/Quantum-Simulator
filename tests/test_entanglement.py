@@ -2,7 +2,9 @@ import unittest
 
 import numpy as np
 
+from quantum_simulator import algorithms as alg
 from quantum_simulator import gates
+from quantum_simulator.circuit import run
 from quantum_simulator.entanglement import (
     bipartition_matrix,
     entanglement_entropy,
@@ -16,13 +18,6 @@ from quantum_simulator.entanglement import (
 from quantum_simulator.observables import tfim
 from quantum_simulator.state import State
 from tests.reference import random_state
-
-
-def ghz(n: int) -> State:
-    s = State.zero(n).apply(gates.H, [0])
-    for q in range(1, n):
-        s.apply(gates.CX, [0, q])
-    return s
 
 
 def brute_force_rdm(vec: np.ndarray, keep: list[int], n: int) -> np.ndarray:
@@ -58,11 +53,11 @@ class TestSchmidt(unittest.TestCase):
             self.assertAlmostEqual(purity(s, qubits), 1.0)
 
     def test_bell_and_ghz(self):
-        bell = ghz(2)
+        bell = run(alg.ghz(2)).state
         self.assertEqual(schmidt_rank(bell, [0]), 2)
         self.assertAlmostEqual(entanglement_entropy(bell, [0]), 1.0)
         np.testing.assert_allclose(reduced_density_matrix(bell, [1]), np.eye(2) / 2, atol=1e-15)
-        g = ghz(4)
+        g = run(alg.ghz(4)).state
         for qubits in [[0], [3], [1, 2], [0, 1, 3]]:
             self.assertAlmostEqual(entanglement_entropy(g, qubits), 1.0)
 
@@ -71,7 +66,7 @@ class TestSchmidt(unittest.TestCase):
         self.assertAlmostEqual(entanglement_entropy(vec, [0, 3]), entanglement_entropy(vec, [1, 2, 4]))
 
     def test_renyi(self):
-        bell = ghz(2)
+        bell = run(alg.ghz(2)).state
         for alpha in [0.5, 2, 3, np.inf]:
             self.assertAlmostEqual(entanglement_entropy(bell, [0], alpha=alpha), 1.0)
         vec = random_state(4, np.random.default_rng(2))
@@ -118,7 +113,7 @@ class TestEntropyProfile(unittest.TestCase):
 
     def test_product_and_ghz(self):
         np.testing.assert_allclose(entropy_profile(State.from_label("+0-r1")), 0, atol=1e-12)
-        np.testing.assert_allclose(entropy_profile(ghz(5)), [0, 1, 1, 1, 1, 0], atol=1e-12)
+        np.testing.assert_allclose(entropy_profile(run(alg.ghz(5)).state), [0, 1, 1, 1, 1, 0], atol=1e-12)
 
     def test_renyi_profile(self):
         vec = random_state(5, np.random.default_rng(11))

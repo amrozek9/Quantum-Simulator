@@ -20,6 +20,8 @@ from pathlib import Path
 
 import numpy as np
 
+from experiments.style import THEMES, setup, style_axes
+
 from quantum_simulator.algorithms import grover, grover_success_theory, optimal_grover_iterations
 from quantum_simulator.circuit import run
 
@@ -41,38 +43,21 @@ def measure(n: int, marked: int, max_iterations: int) -> dict:
 
 # -- figure -----------------------------------------------------------------------
 
-THEMES = {
-    "light": {"surface": "#fcfcfb", "text": "#0b0b0b", "muted": "#52514e", "grid": "#e4e3df", "series": "#2a78d6"},
-    "dark": {"surface": "#1a1a19", "text": "#ffffff", "muted": "#c3c2b7", "grid": "#3a3a37", "series": "#3987e5"},
-}
-
 
 def plot(res: dict, path: Path, theme: str) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    c = THEMES[theme]
-    plt.rcParams.update({
-        "font.size": 10, "text.color": c["text"], "axes.labelcolor": c["muted"],
-        "xtick.color": c["muted"], "ytick.color": c["muted"], "axes.edgecolor": c["grid"],
-    })
+    plt, c = setup(theme)
+    colors = {"series": c["slots"][0]}
     k = np.asarray(res["k"])
     fine = np.linspace(0, k[-1], 600)
     theta = np.arcsin(1 / np.sqrt(2 ** res["n"]))
 
     fig, ax = plt.subplots(figsize=(8.5, 3.8))
     fig.patch.set_facecolor(c["surface"])
-    ax.set_facecolor(c["surface"])
-    ax.grid(True, color=c["grid"], lw=0.6)
-    ax.set_axisbelow(True)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
+    style_axes(ax, c)
 
     ax.plot(fine, np.sin((2 * fine + 1) * theta) ** 2, color=c["muted"], lw=1, ls=(0, (3, 3)), zorder=1,
             label="theory: sin²((2k+1)θ), sin θ = 1/√N")
-    ax.plot(k, res["success"], "o", color=c["series"], ms=6, mec=c["surface"], mew=1.5, zorder=2,
+    ax.plot(k, res["success"], "o", color=colors["series"], ms=6, mec=c["surface"], mew=1.5, zorder=2,
             label="simulated circuits")
     k_opt = res["k_opt"]
     ax.axvline(k_opt, color=c["muted"], lw=0.8, ls=":")
