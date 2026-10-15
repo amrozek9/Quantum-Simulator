@@ -25,7 +25,7 @@ from tests.test_circuit import random_circuit
 try:
     import jax.numpy as jnp
 
-    from quantum_simulator import jax_backend as jb
+    from quantum_simulator.backends import jax_backend as jb
 except ImportError:  # pragma: no cover
     jb = None
 

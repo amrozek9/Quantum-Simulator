@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import time
 from pathlib import Path
 
@@ -194,6 +195,9 @@ def main() -> None:
     ap.add_argument("--timing-sizes", type=int, nargs="+", default=[20, 22, 24])
     args = ap.parse_args()
 
+    meta = {"g": args.g, "seeds": args.seeds, "numpy": np.__version__,
+            "python": platform.python_version(), "platform": platform.platform()}
+    print(f"seeds=0..{args.seeds - 1}  " + "  ".join(f"{k}={v}" for k, v in meta.items() if k != "seeds"))
     print("Echo experiment")
     echo = [run_echo(n, args.depths, args.seeds, args.g) for n in args.sizes]
     print("Single-qubit gate timing")
@@ -205,7 +209,6 @@ def main() -> None:
     results_dir, fig_dir = HERE / "results", HERE / "figures"
     results_dir.mkdir(exist_ok=True)
     fig_dir.mkdir(exist_ok=True)
-    meta = {"g": args.g, "seeds": args.seeds, "numpy": np.__version__}
     (results_dir / "precision.json").write_text(
         json.dumps({"meta": meta, "echo": echo, "timing": timing, "slopes": slopes}, indent=1)
     )

@@ -28,24 +28,6 @@ expressiveness: the CZ ansatz cannot reach generic states at any depth
 (next result). [`experiments/barren_plateaus.py`](experiments/barren_plateaus.py)
 regenerates the figure in about 3 minutes.
 
-### VQE reaches the exact ground state, or a ceiling the Lie algebra predicts
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/vqe-convergence-dark.png">
-  <img alt="VQE energy error against ansatz depth on the critical 8-qubit Ising chain, log scale. The RY + CX ansatz falls from 0.1 at 1 layer to 1.6e-4 at 12, crossing the 1.6e-3 threshold at 6 layers. The RY + CZ ansatz plateaus at 0.101 from 4 layers on." src="experiments/figures/vqe-convergence-light.png">
-</picture>
-
-On the critical (h = J) open Ising chain of 8 qubits, VQE with the CX
-ansatz gets below 1.6×10⁻³ (chemical accuracy's 1.6 mHa carried over to
-this model's energy scale) at 6 layers. It reaches 1.6×10⁻⁴ and fidelity
-0.99998 with the exact ground state at 12 layers. The best of 16 restarts
-does not improve at every single depth (5, 7 and 9 layers come out worse
-than the depth before), which is ordinary non-convex optimization showing
-through. The CZ ansatz stops at error 0.101 (fidelity 0.882) from 4 layers
-on and never improves, as its small Lie algebra predicts.
-[`experiments/vqe_convergence.py`](experiments/vqe_convergence.py), about
-8 minutes.
-
 ### The phase transition, and why a finite chain hides its entropy peak
 
 <picture>
@@ -83,12 +65,33 @@ produces both figures in about 8 minutes.
 
 Every gate, state, observable and partial trace is checked against Qiskit
 exactly, including global phases. Hypothesis-generated random circuits
-(about 12,000 in one thorough run) are checked against Qiskit and against a
-naive full-matrix simulator that shares no code with this one. JAX autodiff
-agrees with parameter-shift gradients computed on the NumPy simulator to
-about 1e-16, and the fast VQE path agrees with the generic simulator to
-1e-12. Bugs were planted in each module to confirm the tests catch them.
-Details are in [How correctness is checked](#how-correctness-is-checked).
+(about 12,000 in one thorough run) are checked against Qiskit and against
+two naive full-matrix simulators that share no code with this one. JAX
+autodiff agrees with parameter-shift gradients computed on the NumPy
+simulator to about 1e-16, and the fast VQE path agrees with the generic
+simulator to 1e-12. The MPS, stabilizer and density-matrix backends are
+each checked against the dense simulator, and OpenQASM 3 output loads in
+Qiskit's importer with identical amplitudes. Bugs were planted in each
+module to confirm the tests catch them. Details are in
+[How correctness is checked](#how-correctness-is-checked).
+
+### VQE reaches the exact ground state, or a ceiling the Lie algebra predicts
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/vqe-convergence-dark.png">
+  <img alt="VQE energy error against ansatz depth on the critical 8-qubit Ising chain, log scale. The RY + CX ansatz falls from 0.1 at 1 layer to 1.6e-4 at 12, crossing the 1.6e-3 threshold at 6 layers. The RY + CZ ansatz plateaus at 0.101 from 4 layers on." src="experiments/figures/vqe-convergence-light.png">
+</picture>
+
+On the critical (h = J) open Ising chain of 8 qubits, VQE with the CX
+ansatz gets below 1.6×10⁻³ (chemical accuracy's 1.6 mHa carried over to
+this model's energy scale) at 6 layers. It reaches 1.6×10⁻⁴ and fidelity
+0.99998 with the exact ground state at 12 layers. The best of 16 restarts
+does not improve at every single depth (5, 7 and 9 layers come out worse
+than the depth before), which is ordinary non-convex optimization showing
+through. The CZ ansatz stops at error 0.101 (fidelity 0.882) from 4 layers
+on and never improves, as its small Lie algebra predicts.
+[`experiments/vqe_convergence.py`](experiments/vqe_convergence.py), about
+8 minutes.
 
 ## Usage
 
@@ -113,10 +116,17 @@ run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter 
 ## Setup
 
 ```sh
-pip install -r requirements.txt     # numpy; qiskit, jax, hypothesis and matplotlib are optional
-python -m unittest discover         # 296 tests in under a minute; tests needing a missing optional package skip
+pip install -e ".[all]"             # the package plus JAX, Qiskit, Hypothesis and matplotlib, pinned
+python -m unittest discover         # 325 tests in about a minute
 HYPOTHESIS_PROFILE=thorough python -m unittest tests.test_properties   # 2000 random circuits per property
 ```
+
+`pip install -e .` installs only the simulator and NumPy; the extras are
+`jax`, `test` and `plots`, and tests whose optional package is missing skip.
+Every dependency is pinned in [`pyproject.toml`](pyproject.toml) to the exact
+version the results here were produced with. Each experiment script
+regenerates its figures and raw numbers with one command and prints its seed
+and environment.
 
 ## Conventions
 
@@ -146,9 +156,12 @@ HYPOTHESIS_PROFILE=thorough python -m unittest tests.test_properties   # 2000 ra
 | `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy, entropy across every cut (`entropy_profile`), Page's formula |
 | `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions, multi-controlled `mcx`/`mcz`), `run`, DAG, depth, layers, single-qubit gate fusion, `inverse`, `compose` |
 | `algorithms` | Bell pair, GHZ, teleportation, Bernstein–Vazirani, Grover, QFT, phase estimation, as circuits |
+| `backends.mps` | Matrix product states in mixed canonical form: SVD truncation by bond dimension and cutoff, SWAP routing for distant gates, discarded-weight fidelity estimate, Schmidt values per cut |
+| `backends.stabilizer` | Aaronson–Gottesman tableau for Clifford circuits: O(n²) memory, measurement and classical control |
+| `backends.density` | Density matrices with Kraus channels (depolarizing, amplitude and phase damping, bit flip), noisy circuits, and pure-state trajectory averaging |
 | `vqe` | Layered RY ansatz with a CX or CZ ladder; a fast compiled path (`lax.scan` over layers, real amplitudes, the ladder as one permutation or phase vector), several observables per compilation; Adam; `vqe` with batched restarts; exact dynamical-Lie-algebra dimension |
-| `interop` | `to_qiskit`: export a `Circuit`, with bound or symbolic parameters |
-| `jax_backend` | The same simulator as pure JAX functions: `make_state`, `make_energy`, `make_value_and_grad` (compiled, differentiable). Optional; importing it enables JAX's 64-bit mode |
+| `interop` | `to_qiskit` and `from_qiskit`; `to_qasm3` and `from_qasm3` for OpenQASM 3, with exact definitions for the gates outside `stdgates.inc` |
+| `backends.jax_backend` | The same simulator as pure JAX functions: `make_state`, `make_energy`, `make_value_and_grad` (compiled, differentiable). Optional; importing it enables JAX's 64-bit mode |
 | `gradients` | Exact gradients by the parameter-shift rule on the NumPy simulator: two terms for RX/RY/RZ/RXX/RYY/RZZ/P/CP, four terms for CRX/CRY/CRZ; also finite differences |
 
 ## The linear algebra, and where it lives
@@ -194,6 +207,8 @@ with it:
 | `test_qiskit_parity.py` | 27 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy`, QFT against `QFTGate`, the algorithm circuits, multi-controlled gates |
 | `test_properties.py` | 8 | Hypothesis-generated circuits (every gate kind, up to 6 qubits and 30 ops) against Qiskit and against two naive full-matrix simulators (bit-pattern loops and `np.kron`); norm, fusion, inverse and scheduling invariants; a planted bug shrunk to a minimal circuit |
 | `test_algorithms.py` | 23 | Each algorithm's defining property (below), plus `mcx`, `mcz`, `inverse` and `compose` |
+| `test_backends.py` | 19 | MPS against the dense simulator (exact without truncation, SWAP routing, Schmidt values, truncation error falling with bond dimension); stabilizer tableau against the dense simulator on random Clifford circuits, GHZ on 1000 qubits, teleportation; density matrices against pure states, channel closed forms, trajectories converging to the density matrix |
+| `test_interop.py` | 10 | OpenQASM 3 round trips (exact ops and angles, symbolic parameters, measurement and conditions), Qiskit's importer reading the output with identical amplitudes, `from_qiskit` round trips and hand-built Qiskit circuits |
 | `test_vqe.py` | 15 | The fast ansatz path against the NumPy simulator and the generic JAX backend (both entanglers, Pauli strings with Y's, both precisions); its gradient against parameter shifts; Adam against its formula; VQE reaching exact energies; the CZ ceiling not moving with depth; DLA dimensions n(n+1) and so(2ⁿ) |
 
 **Property-based testing.** [`tests/test_properties.py`](tests/test_properties.py)
@@ -218,7 +233,7 @@ one-qubit gate on qubit 0 of a two-qubit register, which is the bug in its
 smallest form.
 
 **Algorithms as tests.** Each algorithm in
-[`quantum_simulator/algorithms.py`](quantum_simulator/algorithms.py) has a
+[`quantum_simulator/algorithms.py`](src/quantum_simulator/algorithms.py) has a
 property that only holds if every convention is right:
 
 | Algorithm | Exercises | Asserted |
@@ -397,13 +412,13 @@ with |+⟩⊗|+⟩.
 
 ## Gradients: autodiff against the parameter-shift rule
 
-[`jax_backend`](quantum_simulator/jax_backend.py) runs the same simulator
+[`jax_backend`](src/quantum_simulator/backends/jax_backend.py) runs the same simulator
 as pure JAX functions, so `jax.grad` differentiates the energy with respect
 to every circuit parameter at once:
 
 ```python
 from quantum_simulator import Circuit
-from quantum_simulator.jax_backend import make_value_and_grad
+from quantum_simulator.backends.jax_backend import make_value_and_grad
 from quantum_simulator.observables import tfim
 
 ansatz = Circuit(2).ry(0).ry(1).cx(0, 1)
@@ -412,7 +427,7 @@ energy, gradient = value_and_grad([0.3, 1.2])           # any parameter array
 ```
 
 Hardware can't backpropagate. It uses the parameter-shift rule instead,
-which [`gradients`](quantum_simulator/gradients.py) implements on the
+which [`gradients`](src/quantum_simulator/gradients.py) implements on the
 NumPy simulator. The tests check one against the other, two independent
 derivations on two independent simulators, and they agree to about
 1e-16. Two details matter:
@@ -456,37 +471,130 @@ gradient it dominates.
 Reproduce with `python -m experiments.gradient_cost` (about 4 minutes,
 mostly compilation). Timings are from one Windows machine, CPU only.
 
+## Scaling: where Python actually costs time
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/scaling-dark.png">
+  <img alt="Left: time to apply one gate against qubit count, log scale. It stays near 27 microseconds up to about 11 qubits, then rises, roughly doubling per qubit from 16 qubits on to 0.15 seconds at 24. Right: time per gate for a whole circuit. Compiled JAX is about 2 to 3 microseconds per gate up to 8 qubits against 25 to 30 for NumPy; the curves converge by 16 qubits." src="experiments/figures/scaling-light.png">
+</picture>
+
+NumPy's inner loops are compiled, so on a large state a gate costs what the
+memory traffic costs. What Python adds is a fixed cost per call. Measured on
+this machine ([`experiments/scaling.py`](experiments/scaling.py)):
+
+- **One gate costs about 27 µs of overhead** up to n ≈ 11, whatever the
+  state's size. It passes twice that near **n = 13**, and above n ≈ 16 the
+  time grows ×1.94 per qubit: memory-bound. The 5× jump between 15 and 16
+  qubits is where the state (1 MiB at 16 qubits) stops fitting in fast cache.
+- **Compiling the whole circuit with JAX** removes the per-call cost: 2–3 µs
+  per gate against 25–30 µs for NumPy up to 8 qubits (10–13× faster),
+  narrowing to 1.5× at 16 qubits and 2.6× at 20, where memory dominates.
+  Compiling these circuits took 0.4–4 s.
+- **Fusing single-qubit runs** saves 1.1–1.4× here, where each run is only
+  two gates.
+- **Batching 64 parameter sets with `vmap`** is 2.1× faster than a loop of
+  compiled calls (n = 8).
+- **complex64** halves memory and was 1.6–2× faster per gate at 20–24
+  qubits ([What complex64 costs](#what-complex64-costs)).
+- **GPU:** untested. This machine has no GPU; the JAX code needs no changes
+  to run on one, but nothing here measures it.
+
+## Other representations, and what each assumes
+
+A dense state vector assumes nothing, which is why it costs 2ⁿ. Each
+backend in [`src/quantum_simulator/backends/`](src/quantum_simulator/backends)
+buys memory by assuming structure, and each is tested against the dense
+simulator:
+
+| Representation | Memory | Per gate | Assumption | Module |
+|---|---|---|---|---|
+| Dense state vector | O(2ⁿ) | O(2ⁿ) | none | `state` |
+| Matrix product state | O(nχ²) | O(χ³) | Schmidt rank ≤ χ at every cut | `backends.mps` |
+| Stabilizer tableau | O(n²) | O(n) per gate, O(n²) per measurement | Clifford gates only | `backends.stabilizer` |
+| Density matrix | O(4ⁿ) | O(4ⁿ) | none, but represents mixed states | `backends.density` |
+
+**Matrix product states.** On a 16-qubit brickwork circuit of random
+rotations and CX gates, an MPS with bond dimension χ = 2ᵏ tracks the dense
+state exactly for 2k layers, then loses fidelity
+([`experiments/mps_truncation.py`](experiments/mps_truncation.py)):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/mps-truncation-dark.png">
+  <img alt="Left: MPS infidelity against circuit depth for bond dimensions 2 to 256, log scale. Each curve sits at 1e-14 until a depth that grows with bond dimension, then rises; bond dimension 256 stays exact throughout. Right: log2 of the largest Schmidt rank steps up by one bit every two layers, from 1 to 8, while the half-chain entropy rises more slowly, to 3.8 bits." src="experiments/figures/mps-truncation-light.png">
+</picture>
+
+What decides exactness is the **Schmidt rank**, not the entanglement
+entropy. Every χ loses exactness at precisely the first layer where the
+largest Schmidt rank over all cuts exceeds χ. At that point the entropy is
+far lower: χ = 2 fails at layer 3 with only 0.82 bits across the middle.
+Because truncation then discards small Schmidt coefficients first, the
+error grows smoothly: after 16 layers, infidelity is 0.17 at χ = 16, 0.017
+at χ = 32, 1.4×10⁻⁴ at χ = 64 and 1.1×10⁻⁸ at χ = 128. The MPS's own
+estimate (the product of 1 − discarded weight) tracks the true fidelity,
+e.g. 0.8277 against 0.8252 at χ = 16.
+
+**Stabilizer tableau.** By the Gottesman–Knill theorem, Clifford circuits
+(H, S, CNOT and Paulis) are classically efficient. The tableau prepares and
+measures a 1000-qubit GHZ state in about 0.2 s, where a state vector would
+need 2¹⁰⁰⁰ amplitudes. It matches the dense simulator on random Clifford
+circuits and runs teleportation, since its corrections are Clifford too.
+
+**Noise: density matrices and trajectories.** A density matrix evolves as
+UρU† and passes through noise channels as Σ K ρ K†, at 4ⁿ cost. The
+alternative is trajectory averaging: simulate the pure state, pick one Kraus
+operator at random after each noisy step, and average
+([`experiments/noise.py`](experiments/noise.py)):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/noise-dark.png">
+  <img alt="Left: GHZ coherence, the expectation of X on every qubit, against depolarizing probability for 2, 4, 6 and 8 qubits; larger states decay faster, to 0.21 at 8 qubits and p = 0.1. Trajectory estimates at 8 qubits sit on the density-matrix curve within their error bars. Right: time for one run against qubit count, log scale: the density matrix rises steeply to 15 seconds at 11 qubits, one trajectory slowly to 8 milliseconds." src="experiments/figures/noise-light.png">
+</picture>
+
+GHZ coherence falls faster with more qubits (0.46 at 8 qubits and p = 0.05).
+2000 trajectories reproduce the density matrix within 1.7 standard errors.
+One density-matrix run grows about 4× per qubit (15 s at 11 qubits), one
+trajectory about 1.3× (8 ms), so at the 2000 trajectories needed for a
+standard error near 0.02 the two cost the same at about 11 qubits, and
+trajectories win beyond.
+
 ## Project layout
 
 ```text
-quantum_simulator/
-  state.py          State, index convention, apply_gate, precision
-  linalg.py         inner, fidelity, dagger, unitary/Hermitian checks, kron
-  gates.py          gate matrices, controlled(), fuse()
-  observables.py    PauliSum, Z fast path, correlations, TFIM, exact diagonalization
-  entanglement.py   Schmidt decomposition, reduced density matrices, entropies, Page's formula
-  circuit.py        Op, Circuit, run, DAG, fusion
-  interop.py        to_qiskit
-  jax_backend.py    the simulator in JAX: compiled, differentiable energies
-  gradients.py      parameter-shift and finite-difference gradients
-  algorithms.py     Bell, GHZ, teleportation, Bernstein-Vazirani, Grover, QFT, phase estimation
-  vqe.py            layered ansatz, fast compiled expectations, Adam, VQE, Lie-algebra dimension
+pyproject.toml          package metadata and pinned dependencies (pip install -e ".[all]")
+src/quantum_simulator/
+  state.py              State, index convention, apply_gate, precision, measurement
+  linalg.py             inner, fidelity, dagger, unitary/Hermitian checks, kron
+  gates.py              gate matrices, controlled(), fuse()
+  circuit.py            Op, Circuit, run, DAG, fusion, inverse, compose
+  observables.py        PauliSum, Z fast path, correlations, TFIM, exact diagonalization
+  entanglement.py       Schmidt decomposition, reduced density matrices, entropies, Page's formula
+  gradients.py          parameter-shift and finite-difference gradients
+  algorithms.py         Bell, GHZ, teleportation, Bernstein-Vazirani, Grover, QFT, phase estimation
+  vqe.py                layered ansatz, fast compiled expectations, Adam, VQE, Lie-algebra dimension
+  interop.py            to/from Qiskit, to/from OpenQASM 3
+  backends/
+    jax_backend.py      the dense simulator in JAX: compiled, differentiable
+    mps.py              matrix product states
+    stabilizer.py       Aaronson-Gottesman tableau
+    density.py          density matrices, noise channels, trajectories
 tests/
-  reference.py      naive loop-based implementations used as ground truth
-  strategies.py     Hypothesis strategies for random circuits, and test profiles
-  test_*.py         296 tests (see above)
-experiments/
-  precision.py      complex64 vs complex128 energy-error study
-  entanglement_scaling.py   area law, critical log law, volume law
-  gradient_cost.py  autodiff vs parameter shift, time per gradient
-  grover.py         Grover success probability against iterations
-  barren_plateaus.py  gradient variance and Lie-algebra dimension against qubit count
-  vqe_convergence.py  VQE energy error against ansatz depth
-  phase_transition.py entanglement and correlations across the Ising transition
-  style.py          shared figure palette and axis styling
-  results/          raw numbers, one JSON per experiment
-  figures/          light and dark PNG per experiment
-requirements.txt
+  reference.py          naive full-matrix oracles (bit loops and np.kron) used as ground truth
+  strategies.py         Hypothesis strategies for random circuits, and test profiles
+  test_*.py             325 tests (see above)
+experiments/            each script regenerates its figures and JSON with one command
+  barren_plateaus.py    gradient variance and Lie-algebra dimension against qubit count
+  phase_transition.py   entanglement and correlations across the Ising transition
+  vqe_convergence.py    VQE energy error against ansatz depth (the TFIM VQE)
+  mps_truncation.py     MPS error against bond dimension as entanglement grows
+  scaling.py            per-call overhead, fusion, JIT and vmap against qubit count
+  noise.py              density matrices against trajectories
+  precision.py          complex64 vs complex128 energy-error study
+  entanglement_scaling.py  area law, critical log law, volume law
+  gradient_cost.py      autodiff vs parameter shift, time per gradient
+  grover.py             Grover success probability against iterations
+  style.py              shared figure palette and axis styling
+  results/              raw numbers, one JSON per experiment
+  figures/              light and dark PNG per figure
 ```
 
 ## Status and limitations
@@ -525,12 +633,23 @@ Done so far:
     diagonalization, the phase-transition sweep, and barren plateaus traced
     to the ansatz's dynamical Lie algebra, with a compiled ansatz path whose
     compile time doesn't grow with depth.
+13. Scaling and other representations: per-call overhead, fusion, JIT and
+    vmap measured against qubit count; matrix product states with a
+    truncation study; a stabilizer tableau; density matrices with noise
+    channels and trajectory averaging.
+14. Packaging and reproducibility: an installable `src/` package with pinned
+    dependencies, a `backends/` package, OpenQASM 3 and Qiskit conversion
+    both ways, and every experiment printing its seed and environment.
 
 Not covered yet:
 
-- **Pure states only.** There are no density-matrix states or noise
-  channels. Reduced density matrices exist only as an output of
-  `entanglement`.
+- **The other backends are deliberately minimal.** The MPS handles one- and
+  two-qubit gates on a chain (distant gates go through SWAPs) and has no
+  canonical-form expectation values or time-evolution algorithms. The
+  stabilizer tableau takes Clifford gates only. Noise is a single one-qubit
+  channel after every gate, not a device model.
+- **GPU untested.** The JAX code should run on a GPU unchanged, but no GPU
+  was available, so nothing here measures it.
 - **Fusion is single-qubit only.** It merges runs of one-qubit gates but
   doesn't absorb them into a neighbouring two-qubit gate. The scheduler
   treats ops as commuting only when they touch disjoint wires, so it misses
@@ -548,9 +667,10 @@ Not covered yet:
   plain Adam with random restarts. Near the transition on 10 qubits it is
   2–3×10⁻² from the exact energy at 8 layers; deeper circuits, more
   restarts or problem-inspired ansätze would do better there.
-- **Tested in one environment:** Python 3.14, NumPy 2.5.3, Qiskit 2.5.2,
-  JAX 0.11.2 (CPU), Hypothesis 6.169.1 and matplotlib 3.11.2 on Windows 11. The minimum versions in
-  `requirements.txt` haven't been tested, and there is no CI.
+- **Tested in one environment:** Python 3.14 on Windows 11, with the
+  versions pinned in `pyproject.toml` (NumPy 2.5.3, Qiskit 2.5.2, JAX 0.11.2
+  on CPU, Hypothesis 6.169.1, matplotlib 3.11.2). Other Python versions and
+  platforms haven't been tried, and there is no CI.
 - **The precision study covers one model and one ansatz**, and its timings
   come from one machine. Other Hamiltonians, deeper circuits or
   non-eigenstate targets may behave differently, especially point 3 of its

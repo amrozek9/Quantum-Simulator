@@ -8,7 +8,7 @@ try:
     import jax
     import jax.numpy as jnp
 
-    from quantum_simulator import jax_backend as jb
+    from quantum_simulator.backends import jax_backend as jb
     from quantum_simulator.vqe import (
         adam,
         ansatz_state,

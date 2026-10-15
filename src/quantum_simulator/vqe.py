@@ -14,7 +14,7 @@ plateaus that the full algebra brings.
 
 :func:`make_ansatz_expectations` evaluates it with ``jax.lax.scan`` over
 layers, so compiling costs the same at any depth (the generic
-:mod:`~quantum_simulator.jax_backend` path unrolls every gate, and its
+:mod:`~quantum_simulator.backends.jax_backend` path unrolls every gate, and its
 compile time grows with the circuit). It returns several expectation values
 at once, so a family of Hamiltonians that are linear combinations of the
 same terms, such as the TFIM at every field ``h``, shares one compilation.
@@ -30,7 +30,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import jax_backend  # noqa: F401  (imported to enable 64-bit JAX)
+from .backends import jax_backend  # noqa: F401  (imported to enable 64-bit JAX)
 from .circuit import Circuit
 from .observables import PauliSum
 

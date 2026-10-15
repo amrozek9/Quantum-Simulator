@@ -30,9 +30,9 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402  (after the config update)
 import numpy as np  # noqa: E402
 
-from .circuit import FIXED_GATES, MULTI_CONTROLLED, PARAMETRIC_GATES, Circuit, Op, multi_controlled_matrix  # noqa: E402
-from .observables import PAULIS, PauliSum  # noqa: E402
-from .state import resolve_dtype  # noqa: E402
+from ..circuit import FIXED_GATES, MULTI_CONTROLLED, PARAMETRIC_GATES, Circuit, Op, multi_controlled_matrix  # noqa: E402
+from ..observables import PAULIS, PauliSum  # noqa: E402
+from ..state import resolve_dtype  # noqa: E402
 
 # -- gates as differentiable functions of their angle -----------------------------
 

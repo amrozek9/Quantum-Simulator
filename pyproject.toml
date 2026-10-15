@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum-simulator"
+version = "0.1.0"
+description = "A research state-vector simulator: dense NumPy, differentiable JAX, MPS, stabilizer and density-matrix backends, checked against Qiskit."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Adam Mrozek" }]
+# Pinned to the exact versions every result in this repository was produced
+# with, so a fresh install reproduces them. Developed and tested on Python 3.14.
+dependencies = ["numpy==2.5.3"]
+
+[project.optional-dependencies]
+# Differentiable backend, VQE, and the gradient and barren-plateau experiments.
+jax = ["jax==0.11.2", "jaxlib==0.11.2"]
+# Qiskit parity and interop tests (with Qiskit's OpenQASM 3 reader), property-based tests.
+test = ["qiskit==2.5.2", "qiskit-qasm3-import==0.6.0", "hypothesis==6.169.1"]
+# Figures in experiments/.
+plots = ["matplotlib==3.11.2"]
+all = ["quantum-simulator[jax,test,plots]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

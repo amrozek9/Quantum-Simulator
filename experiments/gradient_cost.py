@@ -56,7 +56,7 @@ def best_time(f, repeats: int) -> float:
 def measure(n: int, layers_list: list[int], seed: int, repeats: int) -> list[dict]:
     import jax
 
-    from quantum_simulator import jax_backend as jb
+    from quantum_simulator.backends import jax_backend as jb
 
     h = tfim(n, J=1.0, h=1.0)
     rng = np.random.default_rng(seed)

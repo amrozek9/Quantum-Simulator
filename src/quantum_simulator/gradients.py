@@ -2,7 +2,7 @@
 
 This is how gradients are measured on hardware, which cannot backpropagate:
 each derivative is a weighted difference of energies at shifted angles. It
-is an independent derivation from :mod:`quantum_simulator.jax_backend`'s
+is an independent derivation from :mod:`quantum_simulator.backends.jax_backend`'s
 autodiff, so the two checking each other is a strong test.
 
 Which rule applies depends on the gate's generator. Writing the gate as
