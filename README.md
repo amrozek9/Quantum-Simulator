@@ -63,8 +63,21 @@ the peak entirely: the exact curve's maximum sits at h = 0.45. VQE,
 minimizing the plain Hamiltonian, finds the symmetry-broken states on its
 own and tracks that curve. Its errors are largest next to the transition
 (2–3×10⁻² at h = 0.75 and 1.0, against 6×10⁻⁴ to 4×10⁻³ elsewhere).
-[`experiments/phase_transition.py`](experiments/phase_transition.py), about
-8 minutes.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/figures/correlations-dark.png">
+  <img alt="Correlation between two sites against their separation on a 10-qubit chain, log scale. In the ordered phase (h = 0.5) it stays near 0.93 and dips only at the largest separations. At the critical point (h = 1) it decays slowly from 0.59 to 0.096. In the disordered phase (h = 1.5) it falls in a straight line on the log scale from 0.36 to 0.004." src="experiments/figures/correlations-light.png">
+</picture>
+
+The same transition shows in how correlations fall off with distance (exact
+ground states, pairs centered on the chain). In the ordered phase ⟨Z_a Z_b⟩
+stays near 0.93 at every separation: long-range order. It sags only at the
+largest separations, whose sites sit at the chain's ends. In the disordered
+phase it falls by a steady factor of about 0.6 per site, which is
+exponential decay with a correlation length of about 2 sites. At the
+critical point it falls slowly in between, from 0.59 to 0.096 over 9 sites.
+[`experiments/phase_transition.py`](experiments/phase_transition.py)
+produces both figures in about 8 minutes.
 
 ### Why these numbers can be trusted
 
@@ -101,7 +114,7 @@ run(ansatz, params=[0.3, 1.2]).state              # same circuit, any parameter 
 
 ```sh
 pip install -r requirements.txt     # numpy; qiskit, jax, hypothesis and matplotlib are optional
-python -m unittest discover         # 295 tests in under a minute; tests needing a missing optional package skip
+python -m unittest discover         # 296 tests in under a minute; tests needing a missing optional package skip
 HYPOTHESIS_PROFILE=thorough python -m unittest tests.test_properties   # 2000 random circuits per property
 ```
 
@@ -128,7 +141,7 @@ HYPOTHESIS_PROFILE=thorough python -m unittest tests.test_properties   # 2000 ra
 |---|---|
 | `state` | `State`, the index convention, `apply_gate`, precision handling, measurement and sampling |
 | `linalg` | inner product, fidelity, unitary/Hermitian checks, `kron` |
-| `gates` | standard gates and rotations, `controlled()`, `fuse()` |
+| `gates` | standard gates and rotations, `controlled()`, `fuse()`. {H, S, CNOT} generate the Clifford group, which is not universal and, by the Gottesman–Knill theorem, can be simulated classically in polynomial time; adding T makes the set universal |
 | `observables` | `PauliSum`: expectation and variance without building the matrix (Z-only terms from probabilities alone), exact diagonalization; `pauli_string`, `z_expectation`, `z_correlation`, `tfim` and its closed-form ground energy |
 | `entanglement` | Schmidt decomposition, reduced density matrices, von Neumann/Rényi entropy, entropy across every cut (`entropy_profile`), Page's formula |
 | `circuit` | `Op`, `Circuit` (parameters as indices, classical bits, conditions, multi-controlled `mcx`/`mcz`), `run`, DAG, depth, layers, single-qubit gate fusion, `inverse`, `compose` |
@@ -179,16 +192,17 @@ with it:
 | `test_circuit.py` | 32 | Building and validation; `run` against applying gates by hand; parameter reuse; classical control; teleportation on all four branches; depth and layers worked out by hand; fusion keeps the state and measurement results, merges in the right order, and never crosses a measurement, condition or two-qubit gate |
 | `test_gradients.py` | 18 | JAX autodiff against parameter shifts computed on the NumPy simulator (two independent derivations, two independent simulators), on circuits with every parameterized gate and a shared parameter; shift rules against finite differences and closed forms; the two-term rule shown to fail exactly where it should; JAX states and energies against NumPy in both precisions; one compilation serving many parameter sets |
 | `test_qiskit_parity.py` | 27 | Qiskit 2.x, exactly rather than up to global phase: every gate matrix, random circuits (as gate calls and as exported `Circuit`s, fused and unfused), symbolic parameters, circuit depth against Qiskit's `depth()`, probabilities, labels, `pauli_string` and `tfim` against `SparsePauliOp.from_sparse_list`, expectations including the Z-only fast path, `partial_trace`, `entropy`, QFT against `QFTGate`, the algorithm circuits, multi-controlled gates |
-| `test_properties.py` | 7 | Hypothesis-generated circuits (every gate kind, up to 6 qubits and 30 ops) against Qiskit and against a naive full-matrix simulator; norm, fusion, inverse and scheduling invariants; a planted bug shrunk to a minimal circuit |
+| `test_properties.py` | 8 | Hypothesis-generated circuits (every gate kind, up to 6 qubits and 30 ops) against Qiskit and against two naive full-matrix simulators (bit-pattern loops and `np.kron`); norm, fusion, inverse and scheduling invariants; a planted bug shrunk to a minimal circuit |
 | `test_algorithms.py` | 23 | Each algorithm's defining property (below), plus `mcx`, `mcz`, `inverse` and `compose` |
 | `test_vqe.py` | 15 | The fast ansatz path against the NumPy simulator and the generic JAX backend (both entanglers, Pauli strings with Y's, both precisions); its gradient against parameter shifts; Adam against its formula; VQE reaching exact energies; the CZ ceiling not moving with depth; DLA dimensions n(n+1) and so(2ⁿ) |
 
 **Property-based testing.** [`tests/test_properties.py`](tests/test_properties.py)
 uses [Hypothesis](https://hypothesis.readthedocs.io) to generate random
-circuits and checks each against two oracles that share no code with the
-simulator: Qiskit, and a naive simulator that multiplies full 2ⁿ×2ⁿ
-matrices built by looping over bit patterns. The second catches the case
-where this package and Qiskit share a misunderstanding. Qiskit comparisons
+circuits and checks each against oracles that share no code with the
+simulator: Qiskit, and two naive simulators that multiply full 2ⁿ×2ⁿ
+matrices, one built by looping over bit patterns and one with `np.kron`
+(I ⊗ … ⊗ U ⊗ … ⊗ I). The naive ones catch the case where this package and
+Qiskit share a misunderstanding. Qiskit comparisons
 check fidelity, as global phase is unobservable, and also check amplitudes
 exactly, which is stricter and possible because the gate definitions match
 Qiskit's down to the phase. The default profile runs 100 fixed circuits per
@@ -250,11 +264,22 @@ The tests have caught two real bugs so far:
 
 ## What complex64 costs
 
-Halving the bytes per amplitude buys **one** extra qubit at a fixed memory
-budget, not twice as many qubits: a 2ⁿ-amplitude state takes 2ⁿ × 16 bytes in
-complex128 and 2ⁿ × 8 in complex64. The question is what that qubit costs in
-accuracy, so [`experiments/precision.py`](experiments/precision.py) measures
-it on a problem with a known answer.
+A state vector doubles with every qubit, and that ceiling is the same in
+any language:
+
+| Qubits | Amplitudes | complex128 | complex64 |
+|---|---|---|---|
+| 16 | 65,536 | 1 MiB | 512 KiB |
+| 20 | 1,048,576 | 16 MiB | 8 MiB |
+| 26 | 67,108,864 | 1 GiB | 512 MiB |
+| 28 | 2.68 × 10⁸ | 4 GiB | 2 GiB |
+| 30 | 1.07 × 10⁹ | 16 GiB | 8 GiB |
+| 34 | 1.72 × 10¹⁰ | 256 GiB | 128 GiB |
+
+Halving the bytes per amplitude therefore buys **one** extra qubit at a
+fixed memory budget, not twice as many qubits. The question is what that
+qubit costs in accuracy, so [`experiments/precision.py`](experiments/precision.py)
+measures it on a problem with a known answer.
 
 **Setup.** The periodic transverse-field Ising chain at its critical point,
 H = −Σ ZᵢZᵢ₊₁ − Σ Xᵢ. Its ground energy has a closed form,
@@ -449,7 +474,7 @@ quantum_simulator/
 tests/
   reference.py      naive loop-based implementations used as ground truth
   strategies.py     Hypothesis strategies for random circuits, and test profiles
-  test_*.py         295 tests (see above)
+  test_*.py         296 tests (see above)
 experiments/
   precision.py      complex64 vs complex128 energy-error study
   entanglement_scaling.py   area law, critical log law, volume law

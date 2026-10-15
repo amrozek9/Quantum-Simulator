@@ -183,11 +183,17 @@ def is_normalized(psi: np.ndarray, atol: float | None = None) -> bool:
 def apply_gate(psi: np.ndarray, gate: np.ndarray, qubits: Sequence[int]) -> np.ndarray:
     """Return ``U psi`` for a ``2^k x 2^k`` gate acting on ``qubits``.
 
-    The gate is reshaped to a ``(2,)*2k`` tensor, contracted against the
-    target axes with ``tensordot``, and the new axes are moved back into
-    place with ``moveaxis``. Cost is O(2^n * 2^k); the full 2^n x 2^n
-    operator is never formed. ``qubits[0]`` is the gate's least significant
-    bit (see the module docstring).
+    The whole trick is one reshape. A ``2^k x 2^k`` matrix becomes a
+    ``(2,)*2k`` tensor: its row index splits into ``k`` output legs and its
+    column index into ``k`` input legs, one leg of size 2 per qubit. The ``k``
+    input legs are contracted against the target qubits' axes of ``psi`` with
+    ``tensordot``, which leaves the ``k`` output legs at the front, and
+    ``moveaxis`` puts them back where the target axes were. This is the same
+    reshape that underlies tensor-network methods.
+
+    Cost is O(2^n * 2^k); the full 2^n x 2^n operator is never formed.
+    ``qubits[0]`` is the gate's least significant bit, so the legs run from
+    ``qubits[-1]`` down to ``qubits[0]`` (see the module docstring).
 
     The gate is cast to the state's precision first, so a complex64 state
     stays complex64 instead of being silently promoted by a complex128 gate.

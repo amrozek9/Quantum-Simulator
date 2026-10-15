@@ -14,8 +14,14 @@ edges), for three states:
   * VQE states (RY + CX ansatz) at a coarser set of h, minimizing the plain
     Hamiltonian, all sharing one compilation.
 
+It also records <Z_a Z_b> against the separation b - a in each phase
+(h = 0.5, 1, 1.5), for pairs centered on the chain: flat in the ordered
+phase (long-range order), slowly decaying at the critical point, and
+quickly decaying in the disordered phase.
+
 Run from the repo root:  python -m experiments.phase_transition
-Writes experiments/results/phase_transition.json and two figures.
+Writes experiments/results/phase_transition.json and four figures
+(phase-transition and correlations, light and dark).
 """
 
 from __future__ import annotations
@@ -71,6 +77,15 @@ def compute(n: int, eps: float, h_grid: list[float], h_vqe: list[float], layers:
         print(f"  VQE h={h:.2f}: error {r.energy - e0:.2e}, S = {rows[-1]['entropy']:.3f}, "
               f"<Z{a}Z{b}> = {rows[-1]['zz']:.3f}  ({time.perf_counter() - t0:.1f}s)", flush=True)
     out["vqe"] = {"layers": layers, "rows": rows}
+
+    # Correlation against separation, one curve per phase: pairs centered on the chain.
+    out["correlation_vs_distance"] = {}
+    for h in (0.5, 1.0, 1.5):
+        _, gs = tfim(n, 1.0, h).ground_state()
+        r_values = list(range(1, n))
+        zz_r = [z_correlation(gs, (n - 1 - r) // 2, (n - 1 - r) // 2 + r) for r in r_values]
+        out["correlation_vs_distance"][str(h)] = {"r": r_values, "zz": zz_r}
+        print(f"  <Z Z> vs separation at h={h}: " + ", ".join(f"{v:.3g}" for v in zz_r), flush=True)
     return out
 
 
@@ -101,6 +116,28 @@ def plot(res: dict, path: Path, theme: str) -> None:
     plt.close(fig)
 
 
+def plot_correlations(res: dict, path: Path, theme: str) -> None:
+    """<Z_a Z_b> against separation in each phase: flat, slowly decaying, fast decaying."""
+    plt, c = setup(theme)
+    names = {"0.5": "ordered, h = 0.5", "1.0": "critical, h = 1", "1.5": "disordered, h = 1.5"}
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+    fig.patch.set_facecolor(c["surface"])
+    style_axes(ax, c, f"Correlation against separation, {res['n']}-qubit chain (pairs centered)")
+    for color, (key, label) in zip(c["slots"], names.items()):
+        d = res["correlation_vs_distance"][key]
+        ax.plot(d["r"], d["zz"], "-o", color=color, lw=2, ms=6, mec=c["surface"], mew=1.5)
+        ax.annotate(label, (d["r"][-1], d["zz"][-1]), xytext=(6, 0), textcoords="offset points",
+                    va="center", color=c["text"], fontsize=9)
+    ax.set_yscale("log")
+    ax.set_xticks(res["correlation_vs_distance"]["1.0"]["r"])
+    ax.set_xlim(0.5, res["n"] + 2.2)  # room for the direct labels
+    ax.set_xlabel("Separation r = b − a")
+    ax.set_ylabel("⟨Z_a Z_b⟩, exact ground state")
+    fig.tight_layout()
+    fig.savefig(path, dpi=200, facecolor=c["surface"])
+    plt.close(fig)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--n", type=int, default=10)
@@ -126,6 +163,7 @@ def main() -> None:
     (HERE / "results" / "phase_transition.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
     for theme in THEMES:
         plot(res, HERE / "figures" / f"phase-transition-{theme}.png", theme)
+        plot_correlations(res, HERE / "figures" / f"correlations-{theme}.png", theme)
     print("Wrote experiments/results/phase_transition.json and figures")
 
 

@@ -4,6 +4,14 @@ All matrices are ``complex128`` and follow Qiskit's convention: for a gate
 applied to ``qubits = [q0, q1]``, ``q0`` is the least significant bit of the
 row/column index (see :mod:`quantum_simulator.state`). Constant gates are
 read-only so a shared matrix cannot be corrupted by accident.
+
+Why the set stops where it does: {H, S, CNOT} generate the Clifford group.
+Clifford circuits are not universal, and by the Gottesman-Knill theorem a
+classical computer can simulate them in polynomial time (a stabilizer
+tableau suffices; a state vector is not needed). Adding T makes the set
+universal: any unitary can then be approximated to any accuracy. The
+rotations RX, RY and RZ are what variational algorithms tune, and what
+gradients are taken through.
 """
 
 from __future__ import annotations

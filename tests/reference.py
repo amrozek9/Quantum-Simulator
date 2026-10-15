@@ -22,6 +22,31 @@ def dense_operator(gate: np.ndarray, qubits: list[int], n: int) -> np.ndarray:
     return full
 
 
+def kron_operator(gate: np.ndarray, qubits: list[int], n: int) -> np.ndarray:
+    """The same full operator as :func:`dense_operator`, built with ``np.kron`` instead.
+
+    A one-qubit gate on qubit t is the Kronecker chain I x ... x U x ... x I,
+    with the highest qubit leftmost (little-endian). A k-qubit gate is
+    I x G on the k lowest qubits, conjugated by the permutation that moves
+    ``qubits[i]`` to position i. Unusably slow, obviously correct, and built
+    differently from both the tensor simulator and :func:`dense_operator`.
+    """
+    k = len(qubits)
+    if k == 1:
+        factors = [gate if q == qubits[0] else np.eye(2) for q in reversed(range(n))]
+        out = factors[0]
+        for f in factors[1:]:
+            out = np.kron(out, f)
+        return out
+    order = list(qubits) + [q for q in range(n) if q not in qubits]  # new position i holds qubit order[i]
+    dim = 2**n
+    perm = np.zeros((dim, dim))
+    for old in range(dim):
+        new = sum(((old >> q) & 1) << i for i, q in enumerate(order))
+        perm[new, old] = 1
+    return perm.T @ np.kron(np.eye(2 ** (n - k)), gate) @ perm
+
+
 def random_state(n: int, rng: np.random.Generator) -> np.ndarray:
     vec = rng.normal(size=2**n) + 1j * rng.normal(size=2**n)
     return vec / np.linalg.norm(vec)

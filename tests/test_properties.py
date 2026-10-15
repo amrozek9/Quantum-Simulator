@@ -4,10 +4,10 @@ Hypothesis generates circuits with every gate kind on up to 6 qubits and up
 to 30 ops. Each is checked against:
 
 * Qiskit, the external reference whose conventions this package matches;
-* a deliberately naive simulator that builds the full ``2^n x 2^n`` matrix of
-  every op by looping over bit patterns (``tests/reference.py``). It shares no
-  code with the tensor simulator, and catches the case where this package
-  and Qiskit share a misunderstanding.
+* deliberately naive simulators that build the full ``2^n x 2^n`` matrix of
+  every op, one by looping over bit patterns and one with ``np.kron``
+  (``tests/reference.py``). They share no code with the tensor simulator,
+  and catch the case where this package and Qiskit share a misunderstanding.
 
 When a property fails, Hypothesis shrinks the circuit to a minimal failing
 one; the last test here plants a bug and checks that the shrunk circuit is
@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover
 
 from quantum_simulator.circuit import Circuit, fuse_single_qubit_gates, op_matrix, run
 from quantum_simulator.state import State, num_qubits, qubit_axis
-from tests.reference import dense_operator
+from tests.reference import dense_operator, kron_operator
 
 try:
     from qiskit.quantum_info import Statevector
@@ -47,10 +47,23 @@ def naive_run(c: Circuit) -> np.ndarray:
     return vec
 
 
+def kron_run(c: Circuit) -> np.ndarray:
+    """Multiply full matrices built with np.kron (Kronecker chains around each gate)."""
+    vec = np.zeros(2**c.n, dtype=complex)
+    vec[0] = 1
+    for op in c.ops:
+        vec = kron_operator(op_matrix(op), list(op.qubits), c.n) @ vec
+    return vec
+
+
 class TestAgainstNaiveSimulator(unittest.TestCase):
     @given(circuits(max_qubits=5, max_depth=25))
     def test_matches_full_matrix_simulation(self, c):
         np.testing.assert_allclose(run(c).state.vector, naive_run(c), atol=1e-10)
+
+    @given(circuits(max_qubits=5, max_depth=25))
+    def test_matches_kronecker_product_simulation(self, c):
+        np.testing.assert_allclose(run(c).state.vector, kron_run(c), atol=1e-10)
 
 
 @unittest.skipIf(Statevector is None, "qiskit not installed")
