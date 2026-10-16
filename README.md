@@ -1,5 +1,7 @@
 # Quantum-Simulator
 
+[![CI](https://github.com/amrozek9/Quantum-Simulator/actions/workflows/ci.yml/badge.svg)](https://github.com/amrozek9/Quantum-Simulator/actions/workflows/ci.yml)
+
 A state-vector simulator for research, in NumPy with a differentiable JAX
 backend. An n-qubit state is a `(2,)*n` complex tensor, so every gate is a
 `tensordot` on its target axes and the 2ⁿ × 2ⁿ operator is never built.
@@ -567,6 +569,7 @@ trajectories win beyond.
 ## Project layout
 
 ```text
+.github/workflows/ci.yml  tests on Linux and Windows, NumPy-only install, experiment smoke test
 pyproject.toml          package metadata and pinned dependencies (pip install -e ".[all]")
 src/quantum_simulator/
   state.py              State, index convention, apply_gate, precision, measurement
@@ -674,10 +677,13 @@ Not covered yet:
   plain Adam with random restarts. Near the transition on 10 qubits it is
   2–3×10⁻² from the exact energy at 8 layers; deeper circuits, more
   restarts or problem-inspired ansätze would do better there.
-- **Tested in one environment:** Python 3.14 on Windows 11, with the
+- **One Python version:** developed on Python 3.14 and Windows 11, with the
   versions pinned in `pyproject.toml` (NumPy 2.5.3, Qiskit 2.5.2, JAX 0.11.2
-  on CPU, Hypothesis 6.169.1, matplotlib 3.11.2). Other Python versions and
-  platforms haven't been tried, and there is no CI.
+  on CPU, Hypothesis 6.169.1, matplotlib 3.11.2).
+  [CI](.github/workflows/ci.yml) runs the full suite on Linux and Windows,
+  checks that a NumPy-only install skips the optional tests cleanly, runs
+  two experiments end to end, and runs the 2000-circuit property tests
+  weekly. Other Python versions haven't been tried.
 - **The precision study covers one model and one ansatz**, and its timings
   come from one machine. Other Hamiltonians, deeper circuits or
   non-eigenstate targets may behave differently, especially point 3 of its
